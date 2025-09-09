@@ -249,55 +249,171 @@ agent = Agent(name="Helper", tools=[web_search, calculate])
 
 ### Workflows - Structured Execution Paths
 
-Define sequences of steps with various control flow patterns:
+Create sophisticated workflows with the `@step` decorator and advanced control flow:
 
 ```python
-from opper_agent.workflows import Workflow, create_step
+from opper_agent import Agent, step, Workflow, StepContext
+from pydantic import BaseModel, Field
+from typing import List
 
-workflow = Workflow(id="my-workflow", input_model=InputModel, output_model=OutputModel)
-    .then(step1)                    # Sequential execution
-    .parallel([step2, step3])       # Parallel execution
-    .foreach(step4, concurrency=3)  # Process items in parallel
-    .branch([                       # Conditional branching
-        (condition1, step5),
-        (condition2, step6),
+# Define data models
+class DocumentInput(BaseModel):
+    content: str = Field(description="Document content to analyze")
+    priority: str = Field(description="Processing priority: high, normal, low")
+
+class Analysis(BaseModel):
+    sentiment: str = Field(description="Sentiment analysis result")
+    topics: List[str] = Field(description="Key topics identified")
+    summary: str = Field(description="Document summary")
+
+class ProcessedDoc(BaseModel):
+    analysis: Analysis
+    enhanced_content: str = Field(description="Enhanced document content")
+    metadata: dict = Field(description="Processing metadata")
+
+# Define steps using @step decorator
+@step
+async def analyze_document(ctx: StepContext[DocumentInput, Analysis]) -> Analysis:
+    """Analyze document content for sentiment and topics."""
+    doc = ctx.input_data
+    
+    result = await ctx.call_model(
+        name="document_analyzer",
+        instructions="Analyze the document for sentiment and key topics",
+        input_schema=DocumentInput,
+        output_schema=Analysis,
+        input_obj=doc
+    )
+    return result
+
+@step(retry={"attempts": 3}, timeout_ms=30000)
+async def enhance_content(ctx: StepContext[Analysis, str]) -> str:
+    """Enhance content based on analysis."""
+    analysis = ctx.input_data
+    
+    result = await ctx.call_model(
+        name="content_enhancer",
+        instructions=f"Enhance content focusing on {', '.join(analysis.topics)}",
+        input_schema=Analysis,
+        output_schema=str,
+        input_obj=analysis
+    )
+    return result
+
+@step(on_error="continue")
+async def add_metadata(ctx: StepContext[Analysis, dict]) -> dict:
+    """Add processing metadata."""
+    analysis = ctx.input_data
+    
+    return {
+        "processed_at": "2024-01-01T00:00:00Z",
+        "topics_count": len(analysis.topics),
+        "sentiment_confidence": 0.95
+    }
+
+# Conditional processing based on priority
+def is_high_priority(data):
+    return data.priority == "high"
+
+def is_normal_priority(data):
+    return data.priority == "normal"
+
+@step
+async def priority_processing(ctx: StepContext[DocumentInput, DocumentInput]) -> DocumentInput:
+    """Special processing for high-priority documents."""
+    doc = ctx.input_data
+    # Add priority-specific processing
+    return doc
+
+@step
+async def batch_processing(ctx: StepContext[DocumentInput, DocumentInput]) -> DocumentInput:
+    """Batch processing for normal/low priority documents."""
+    doc = ctx.input_data
+    # Add batch-specific processing
+    return doc
+
+# Build complex workflow with branching and parallelism
+workflow = (Workflow(id="document-processor", input_model=DocumentInput, output_model=ProcessedDoc)
+    # Conditional branching based on priority
+    .branch([
+        (is_high_priority, priority_processing),
+        (is_normal_priority, batch_processing),
     ])
-    .map(transform_function)        # Data transformation
-    .commit()
+    
+    # Parallel processing of analysis tasks
+    .parallel([
+        analyze_document,
+        # Process multiple analysis types in parallel
+        Workflow(id="parallel-analysis", input_model=DocumentInput, output_model=Analysis)
+            .then(analyze_document)
+            .commit()
+    ])
+    
+    # Sequential processing of results
+    .then(enhance_content)
+    .then(add_metadata)
+    
+    # Final combination step
+    .map(lambda results: ProcessedDoc(
+        analysis=results[0],  # From analyze_document
+        enhanced_content=results[1],  # From enhance_content  
+        metadata=results[2]   # From add_metadata
+    ))
+    .commit())
 ```
 
-### Steps - Workflow Building Blocks
+### Advanced Workflow Patterns
 
-Create reusable steps with full context access:
-
+**Parallel Processing with `foreach`:**
 ```python
-async def my_step_function(ctx):
-    """Step function with access to context and events"""
-    input_data = ctx.input_data
-    
-    # Emit custom events (forwarded through BaseAgent callback)
-    ctx._emit_event("custom_progress", {"status": "processing"})
-    
-    # Call AI models with structured input/output
-    result = await ctx.call_model(
-        name="step_name",
-        instructions="Your instructions",
-        input_schema=InputSchema,
-        output_schema=OutputSchema,
-        input_obj=input_data,
-    )
-    
-    # Access Opper client directly
-    knowledge_results = ctx.opper.knowledge.query(...)
-    
-    return OutputModel(...)
+@step
+async def process_item(ctx: StepContext[Item, ProcessedItem]) -> ProcessedItem:
+    """Process individual items in parallel."""
+    item = ctx.input_data
+    # Process each item
+    return ProcessedItem(...)
 
-my_step = create_step(
-    id="my_step",
-    input_model=InputModel,
-    output_model=OutputModel,
-    run=my_step_function,
-)
+workflow = (Workflow(id="batch-processor", input_model=BatchInput, output_model=BatchOutput)
+    .foreach(
+        process_item,
+        concurrency=5,  # Process 5 items simultaneously
+        map_func=lambda batch: batch.items  # Extract items to process
+    )
+    .commit())
+```
+
+**Conditional Branching:**
+```python
+@step
+async def urgent_handler(ctx: StepContext[Task, Result]) -> Result:
+    """Handle urgent tasks with special processing."""
+    return await ctx.call_model(name="urgent_processor", ...)
+
+@step  
+async def normal_handler(ctx: StepContext[Task, Result]) -> Result:
+    """Handle normal tasks with standard processing."""
+    return await ctx.call_model(name="normal_processor", ...)
+
+workflow = (Workflow(id="task-router", input_model=Task, output_model=Result)
+    .branch([
+        (lambda task: task.priority == "urgent", urgent_handler),
+        (lambda task: task.priority == "normal", normal_handler),
+    ])
+    .commit())
+```
+
+**Error Handling and Retries:**
+```python
+@step(retry={"attempts": 3, "backoff_ms": 1000}, on_error="continue")
+async def robust_step(ctx: StepContext[Input, Output]) -> Output:
+    """Step with automatic retries and graceful error handling."""
+    try:
+        result = await ctx.call_model(name="api_call", ...)
+        return result
+    except Exception as e:
+        # Log error and return fallback
+        ctx._emit_event("step_fallback", {"error": str(e)})
+        return Output(fallback=True)
 ```
 
 ### Event System - Real-time Progress Tracking
@@ -428,11 +544,11 @@ def search_docs(query: str, _parent_span_id: str = None) -> str:
 
 # In Flow Mode - steps can query knowledge
 async def knowledge_step(ctx):
-    results = ctx.opper.knowledge.query(
-        knowledge_base_id=kb_id, 
-        query="What information do I need?",
-        top_k=5
-    )
+results = ctx.opper.knowledge.query(
+    knowledge_base_id=kb_id, 
+    query="What information do I need?",
+    top_k=5
+)
     return process_knowledge(results)
 ```
 

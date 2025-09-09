@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
 import uuid
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Tuple, Type, TypeVar, Union, Generic
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Tuple, Type, TypeVar, Union, Generic, get_type_hints
 
 from pydantic import BaseModel
 
@@ -175,6 +176,108 @@ def create_step(
             map_out=map_out,
         )
     )
+
+
+def step(
+    func: Callable = None,
+    *,
+    id: str = None,
+    description: str = None,
+    retry: Optional[Dict[str, Any]] = None,
+    timeout_ms: Optional[int] = None,
+    on_error: str = "fail",
+    map_in: Optional[Callable[[Any], Any]] = None,
+    map_out: Optional[Callable[[Any], Any]] = None,
+):
+    """
+    Decorator to convert a function into a Step.
+    
+    Automatically extracts input and output models from function type hints.
+    The function should take a StepContext as its first parameter and return the output model.
+    
+    Args:
+        func: The function to wrap (when used without parentheses)
+        id: Optional custom ID for the step (defaults to function name)
+        description: Optional custom description (defaults to function docstring)
+        retry: Optional retry configuration
+        timeout_ms: Optional timeout in milliseconds
+        on_error: Error handling strategy ("fail", "skip", or "continue")
+        map_in: Optional input transformation function
+        map_out: Optional output transformation function
+    
+    Usage:
+        @step
+        async def process_data(ctx: StepContext[InputModel, OutputModel]) -> OutputModel:
+            \"\"\"Process some data.\"\"\"
+            data = ctx.input_data
+            result = await ctx.call_model(...)
+            return OutputModel(...)
+        
+        @step(id="custom_id", retry={"attempts": 3})
+        async def robust_step(ctx: StepContext[InputModel, OutputModel]) -> OutputModel:
+            # Implementation here
+            pass
+    """
+    def decorator(f: Callable) -> Step:
+        # Extract step ID
+        step_id = id or f.__name__
+        
+        # Extract description
+        step_description = description or f.__doc__ or f"Execute {f.__name__}"
+        
+        # Extract type hints
+        try:
+            type_hints = get_type_hints(f)
+            
+            # Get the return type (output model)
+            return_type = type_hints.get('return')
+            if not return_type:
+                raise ValueError(f"Step function {f.__name__} must have a return type annotation")
+            
+            # Get input model from StepContext parameter
+            sig = inspect.signature(f)
+            params = list(sig.parameters.values())
+            
+            if not params:
+                raise ValueError(f"Step function {f.__name__} must take at least one parameter (StepContext)")
+            
+            first_param = params[0]
+            if first_param.name != 'ctx':
+                raise ValueError(f"Step function {f.__name__} first parameter should be named 'ctx'")
+            
+            # Extract input and output types from StepContext[I, O]
+            ctx_type = type_hints.get('ctx') or first_param.annotation
+            
+            if hasattr(ctx_type, '__args__') and len(ctx_type.__args__) >= 2:
+                input_model = ctx_type.__args__[0]
+                output_model = ctx_type.__args__[1]
+            else:
+                # Fallback: try to extract from return type
+                input_model = BaseModel  # Default to BaseModel if can't determine
+                output_model = return_type
+            
+        except Exception as e:
+            raise ValueError(f"Could not extract type information from step function {f.__name__}: {e}")
+        
+        return create_step(
+            id=step_id,
+            input_model=input_model,
+            output_model=output_model,
+            run=f,
+            description=step_description,
+            retry=retry,
+            timeout_ms=timeout_ms,
+            on_error=on_error,
+            map_in=map_in,
+            map_out=map_out,
+        )
+    
+    if func is None:
+        # Called with arguments: @step(id="something")
+        return decorator
+    else:
+        # Called without arguments: @step
+        return decorator(func)
 
 
 class Workflow(Generic[I, O]):
@@ -499,6 +602,7 @@ __all__ = [
     "StepDef",
     "Step",
     "create_step",
+    "step",
     "Workflow",
     "FinalizedWorkflow",
     "clone_workflow",
