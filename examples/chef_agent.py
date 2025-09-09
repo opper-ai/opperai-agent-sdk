@@ -5,14 +5,15 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from pydantic import BaseModel, Field
+from typing import Optional, List
 
 from opper_agent import Agent, InMemoryStorage, Workflow, create_step
 from opperai import Opper
 
 
 class MealRequest(BaseModel):
-    ingredients: list[str] = Field(description="Available ingredients")
-    dietary: str | None = Field(default=None, description="Dietary preference")
+    ingredients: List[str] = Field(description="Available ingredients")
+    dietary: Optional[str] = Field(default=None, description="Dietary preference")
 
 
 class ChefIdea(BaseModel):
@@ -22,24 +23,24 @@ class ChefIdea(BaseModel):
 
 class RecipeSteps(BaseModel):
     thoughts: str = Field(description="Reasoning when composing steps")
-    steps: list[str] = Field(description="Polished, step-by-step recipe text (without quantities)")
+    steps: List[str] = Field(description="Polished, step-by-step recipe text (without quantities)")
 
 
 class QuantifiedRecipe(BaseModel):
     thoughts: str = Field(description="Reasoning for quantifying ingredients")
-    ingredients_with_quantities: list[str] = Field(description="List of ingredients with quantities and units")
+    ingredients_with_quantities: List[str] = Field(description="List of ingredients with quantities and units")
 
 
 class ShoppingListOut(BaseModel):
     thoughts: str = Field(description="Reasoning for the shopping list")
-    items: list[str] = Field(description="Shopping list items for the recipe")
+    items: List[str] = Field(description="Shopping list items for the recipe")
 
 
 class CombinedRecipeOut(BaseModel):
     thoughts: str = Field(description="Reasoning for the final presentation")
     description: str = Field(description="A compelling description that sells the dish")
-    steps: list[str] = Field(description="Polished, step-by-step recipe text with quantities")
-    shopping_list: list[str] = Field(description="Final shopping list items")
+    steps: List[str] = Field(description="Polished, step-by-step recipe text with quantities")
+    shopping_list: List[str] = Field(description="Final shopping list items")
 
 
 async def generate_idea_step(ctx):
@@ -158,34 +159,46 @@ combine_recipe = create_step(
 )
 
 
+# Create workflow
+chef_workflow = (Workflow(id="chef-workflow", input_model=MealRequest, output_model=CombinedRecipeOut)
+    .then(generate_idea)
+    .then(generate_steps)
+    .then(generate_quantities)
+    .then(generate_shopping_list)
+    .then(combine_recipe)
+    .commit())
+
+# Create agent with flow
 chef_agent = Agent(
     name="Chef Agent",
-    instructions=(
-        "You are Michel, a practical and experienced home chef who helps people cook great meals."
-    ),
-    flow=Workflow(id="chef-workflow", input_model=MealRequest, output_model=CombinedRecipeOut)
-        .then(generate_idea)
-        .then(generate_steps)
-        .then(generate_quantities)
-        .then(generate_shopping_list)
-        .then(combine_recipe)
-        .commit(),
+    description="You are Michel, a practical and experienced home chef who helps people cook great meals.",
+    flow=chef_workflow
 )
 
 
-async def main() -> None:
+def main() -> None:
     api_key = os.getenv("OPPER_API_KEY")
     if not api_key:
         raise RuntimeError("OPPER_API_KEY is required")
-    opper = Opper(http_bearer=api_key)
-
-    storage = InMemoryStorage()
-    run = chef_agent.create_run(opper=opper, storage=storage, tools={}, logger=print)
-    result = await run.start(
-        input_data=MealRequest(ingredients=["1 egg", "200g bacon", "100g spaghetti"], 
-        dietary=None))
-    print(result.model_dump())
+    
+    # Set up event callback for progress tracking
+    def event_callback(event_type: str, data: dict):
+        print(f"{event_type}: {data}")
+    
+    # Create agent with event callback
+    chef_agent_with_events = Agent(
+        name="Chef Agent",
+        description="You are Michel, a practical and experienced home chef who helps people cook great meals.",
+        flow=chef_workflow,
+        callback=event_callback,
+        opper_api_key=api_key
+    )
+    
+    # Process the cooking request
+    # The new Agent.process() method takes a string goal and converts it to the flow's input format
+    result = chef_agent_with_events.process("Create a recipe for a meal using: 1 egg, 200g bacon, 100g spaghetti")
+    print(f"Final result: {result}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

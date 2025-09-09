@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Tuple, Type, TypeVar, Union, Generic
 
@@ -37,7 +38,7 @@ class StepContext(Generic[I, O]):
         parent_span_id: Optional[str],
         tools: Dict[str, Any],
         memory: Any,
-        logger: Any,
+        event_callback: Optional[Callable[[str, Dict[str, Any]], None]],
         emit: Callable[[Dict[str, Any]], None],
         checkpoint: Callable[[Any], Awaitable[None]],
     ) -> None:
@@ -49,9 +50,20 @@ class StepContext(Generic[I, O]):
         self.parent_span_id = parent_span_id
         self.tools = tools
         self.memory = memory
-        self.logger = logger
+        self.event_callback = event_callback
         self.emit = emit
         self.checkpoint = checkpoint
+
+    def _emit_event(self, event_type: str, data: Dict[str, Any] = None):
+        """Emit an event if callback is available."""
+        if self.event_callback:
+            event_data = {
+                "run_id": self.run_id,
+                "step_id": self.step_id,
+                "timestamp": time.time(),
+                **(data or {})
+            }
+            self.event_callback(event_type, event_data)
 
     async def call_model(
         self,
@@ -67,16 +79,41 @@ class StepContext(Generic[I, O]):
 
         Dynamic variables are passed through input, not interpolated into the prompt.
         """
-        result = self.opper.call(
-            name=name,
-            instructions=instructions,
-            input_schema=input_schema,
-            output_schema=output_schema,
-            input=input_obj,
-            model=model,
-            parent_span_id=self.parent_span_id,
-        )
-        return result.json_payload  # Expecting dict compatible with output_schema
+        # Emit model call start event
+        self._emit_event("model_call_start", {
+            "call_name": name,
+            "model": model,
+            "input_schema": input_schema.__name__ if input_schema else None,
+            "output_schema": output_schema.__name__ if output_schema else None
+        })
+        
+        try:
+            result = self.opper.call(
+                name=name,
+                instructions=instructions,
+                input_schema=input_schema,
+                output_schema=output_schema,
+                input=input_obj,
+                model=model,
+                parent_span_id=self.parent_span_id,
+            )
+            
+            # Emit model call success event
+            self._emit_event("model_call_success", {
+                "call_name": name,
+                "model": model
+            })
+            
+            return result.json_payload  # Expecting dict compatible with output_schema
+            
+        except Exception as e:
+            # Emit model call error event
+            self._emit_event("model_call_error", {
+                "call_name": name,
+                "model": model,
+                "error": str(e)
+            })
+            raise
 
 
 class StepDef(Generic[I, O]):
@@ -240,9 +277,9 @@ class FinalizedWorkflow(Generic[I, O]):
         storage: Storage,
         tools: Optional[Dict[str, Any]] = None,
         memory: Any = None,
-        logger: Any = None,
+        event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ) -> "WorkflowRun[I, O]":
-        return WorkflowRun(self, opper=opper, storage=storage, tools=tools or {}, memory=memory, logger=logger)
+        return WorkflowRun(self, opper=opper, storage=storage, tools=tools or {}, memory=memory, event_callback=event_callback)
 
 
 class WorkflowRun(Generic[I, O]):
@@ -254,18 +291,34 @@ class WorkflowRun(Generic[I, O]):
         storage: Storage,
         tools: Dict[str, Any],
         memory: Any,
-        logger: Any,
+        event_callback: Optional[Callable[[str, Dict[str, Any]], None]],
     ) -> None:
         self.wf = wf
         self.opper = opper
         self.storage = storage
         self.tools = tools
         self.memory = memory
-        self.logger = logger
+        self.event_callback = event_callback
         self.run_id = str(uuid.uuid4())
         self.parent_span_id: Optional[str] = None
 
+    def _emit_event(self, event_type: str, data: Dict[str, Any] = None):
+        """Emit an event if callback is available."""
+        if self.event_callback:
+            event_data = {
+                "run_id": self.run_id,
+                "workflow_id": self.wf.id,
+                "timestamp": time.time(),
+                **(data or {})
+            }
+            self.event_callback(event_type, event_data)
+
     async def start(self, *, input_data: I) -> O:
+        # Emit workflow start event
+        self._emit_event("workflow_start", {
+            "input_data": _serialize_model(input_data)
+        })
+        
         # Create a run-level span; associate to parent if provided
         if self.parent_span_id:
             session_span = self.opper.spans.create(name=self.wf.id, input=_serialize_model(input_data), parent_id=self.parent_span_id)
@@ -322,7 +375,19 @@ class WorkflowRun(Generic[I, O]):
 
                     out = await asyncio.gather(*[_run_foreach(x) for x in src_iter])
                 await self._checkpoint(out)
+            
+            # Emit workflow success event
+            self._emit_event("workflow_success", {
+                "output_data": _serialize_model(out)
+            })
+            
             return out  # type: ignore[return-value]
+        except Exception as e:
+            # Emit workflow error event
+            self._emit_event("workflow_error", {
+                "error": str(e)
+            })
+            raise
         finally:
             try:
                 self.opper.spans.update(
@@ -334,7 +399,7 @@ class WorkflowRun(Generic[I, O]):
 
     async def _exec_item(self, item: Any, input_obj: Any) -> Any:
         if isinstance(item, FinalizedWorkflow):
-            sub_run = WorkflowRun(item, opper=self.opper, storage=self.storage, tools=self.tools, memory=self.memory, logger=self.logger)
+            sub_run = WorkflowRun(item, opper=self.opper, storage=self.storage, tools=self.tools, memory=self.memory, event_callback=self.event_callback)
             # Chain sub-run under the same parent run span
             sub_run.parent_span_id = self.parent_span_id
             return await sub_run.start(input_data=input_obj)
@@ -350,6 +415,12 @@ class WorkflowRun(Generic[I, O]):
             payload = _serialize_model(input_obj)
             model_in = step.defn.input_model.model_validate(payload)
 
+        # Emit step start event
+        self._emit_event("step_start", {
+            "step_id": step.defn.id,
+            "input_data": _serialize_model(model_in)
+        })
+        
         # Do not create per-step spans; Opper calls will create their own child spans.
         ctx = StepContext(
             input_data=model_in,
@@ -360,7 +431,7 @@ class WorkflowRun(Generic[I, O]):
             parent_span_id=self.parent_span_id,
             tools=self.tools,
             memory=self.memory,
-            logger=self.logger,
+            event_callback=self.event_callback,
             emit=lambda e: None,
             checkpoint=self._checkpoint,
         )
@@ -375,14 +446,36 @@ class WorkflowRun(Generic[I, O]):
                 else:
                     result = await step.defn.run(ctx)
                 out_obj = result
+                
+                # Emit step success event
+                self._emit_event("step_success", {
+                    "step_id": step.defn.id,
+                    "output_data": _serialize_model(result)
+                })
                 break
             except Exception as ex:  # noqa: BLE001
                 last_exc = ex
+                
+                # Emit step retry event if not the last attempt
                 if i < attempts - 1:
+                    self._emit_event("step_retry", {
+                        "step_id": step.defn.id,
+                        "attempt": i + 1,
+                        "max_attempts": attempts,
+                        "error": str(ex)
+                    })
                     delay = backoff(i) if callable(backoff) else backoff
                     if delay:
                         await asyncio.sleep(delay / 1000.0)
                     continue
+                
+                # Emit step error event for final failure
+                self._emit_event("step_error", {
+                    "step_id": step.defn.id,
+                    "error": str(ex),
+                    "on_error": step.defn.on_error
+                })
+                
                 if step.defn.on_error == "fail":
                     raise
                 if step.defn.on_error in ("skip", "continue"):

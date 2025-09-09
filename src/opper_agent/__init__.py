@@ -10,7 +10,7 @@ from .workflows import (
     InMemoryStorage,
     WorkflowRun,
 )
-from .agent import Agent
+from .base_agent import Agent, tool
 
 __all__ = [
     "StepContext",
@@ -24,4 +24,5 @@ __all__ = [
     "InMemoryStorage",
     "WorkflowRun",
     "Agent",
+    "tool",
 ]
