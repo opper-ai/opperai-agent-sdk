@@ -637,7 +637,7 @@ Be thorough in your reasoning and decisive in your action selection.""",
                 except Exception as e:
                     # If AI conversion fails, try simple parsing for common cases
                     try:
-                        # Simple fallback parsing for ingredient-based models
+                        # Enhanced fallback parsing for different model types
                         if 'ingredients' in self.flow.input_model.__annotations__:
                             # Try to extract ingredients from the goal string
                             import re
@@ -654,6 +654,28 @@ Be thorough in your reasoning and decisive in your action selection.""",
                                     flow_input = self.flow.input_model(ingredients=ingredients)
                                 else:
                                     raise ValueError("Cannot extract ingredients from goal")
+                        elif all(field in self.flow.input_model.__annotations__ for field in ['goal', 'priority', 'category']):
+                            # Handle UserRequest-style models with structured goal strings
+                            import re
+                            
+                            # Try to parse structured goal like "Priority: HIGH | Category: processing | Goal: ..."
+                            priority_match = re.search(r'Priority:\s*(\w+)', goal, re.IGNORECASE)
+                            category_match = re.search(r'Category:\s*(\w+)', goal, re.IGNORECASE)
+                            goal_match = re.search(r'Goal:\s*(.+?)(?:\s*\||$)', goal, re.IGNORECASE)
+                            
+                            if priority_match and category_match and goal_match:
+                                flow_input = self.flow.input_model(
+                                    goal=goal_match.group(1).strip(),
+                                    priority=priority_match.group(1).lower(),
+                                    category=category_match.group(1).lower()
+                                )
+                            else:
+                                # Fallback: treat entire string as goal with default priority/category
+                                flow_input = self.flow.input_model(
+                                    goal=goal,
+                                    priority="medium",
+                                    category="processing"
+                                )
                         else:
                             # Try to create with default values
                             flow_input = self.flow.input_model()

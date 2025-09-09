@@ -1,6 +1,6 @@
 # Opper Agent SDK
 
-A powerful Python SDK for building AI agents using [Opper](https://opper.ai). Create intelligent agents that can operate in two modes: **tools-based reasoning loops** or **structured workflow execution**, with comprehensive event tracking for real-time UI integration.
+A powerful Python SDK for building AI agents with [Opper Task Completion API](https://opper.ai). Create intelligent agents that can operate in two modes: **tools-based reasoning loops** or **structured workflow execution**, with the possibility to mix modes for more advanced multi agent systems. Agents comes with event tracking for real-time UI integration. 
 
 ## 🚀 Features
 
@@ -11,6 +11,30 @@ A powerful Python SDK for building AI agents using [Opper](https://opper.ai). Cr
 - **Error Handling**: Robust error handling with retry mechanisms and fallback strategies
 - **Tracing & Monitoring**: Full observability with Opper's tracing system
 - **Type Safety**: Full Pydantic model validation throughout execution
+
+## 🧠 Two modes
+
+The `Agent` is the core class that supports both operational modes:
+
+```python
+from opper_agent import Agent
+
+# Tools Mode - Dynamic reasoning
+tools_agent = Agent(
+    name="ReasoningAgent",
+    description="Solves problems through iterative thinking",
+    tools=[tool1, tool2, tool3], # You implement tools
+    callback=event_handler  # Optional real-time events
+)
+
+# Flow Mode - Structured workflows  
+flow_agent = Agent(
+    name="WorkflowAgent", 
+    description="Executes predefined workflows",
+    flow=my_workflow, # You implement steps
+    callback=event_handler  # Optional real-time events
+)
+```
 
 ## 📦 Installation
 
@@ -34,11 +58,13 @@ pip install -e .
 export OPPER_API_KEY="your-opper-api-key"
 ```
 
-### 2. Choose Your Agent Mode
+Go to https://platform.opper.ai to generate an api key.
+
+## 2. Choose Your Agent Mode
 
 The Agent supports two modes of operation:
 
-## 🔧 Tools Mode - Reasoning Loop
+### 🔧 Tools Mode - Reasoning Loop
 
 Perfect for complex problem-solving with dynamic tool selection:
 
@@ -69,14 +95,12 @@ result = agent.process("Calculate the area and perimeter of a 5x3 rectangle")
 print(result)
 ```
 
-## 🔄 Flow Mode - Structured Workflows
+### 🔄 Flow Mode - Structured Workflows
 
-Perfect for predictable, multi-step processes:
+Perfect for predictable, multi-step processes using the elegant `@step` decorator:
 
 ```python
-import asyncio
-from opper_agent import Agent
-from opper_agent.workflows import Workflow, create_step
+from opper_agent import Agent, step, Workflow, StepContext
 from pydantic import BaseModel, Field
 
 class MathInput(BaseModel):
@@ -84,27 +108,48 @@ class MathInput(BaseModel):
     length: float = Field(default=5.0)
     width: float = Field(default=3.0)
 
-class MathResult(BaseModel):
-    thoughts: str = Field(description="Reasoning for calculations")
+class AreaResult(BaseModel):
+    thoughts: str = Field(description="Reasoning for area calculation")
     area: float = Field(description="Calculated area")
+
+class PerimeterResult(BaseModel):
+    thoughts: str = Field(description="Reasoning for perimeter calculation")
     perimeter: float = Field(description="Calculated perimeter")
 
-async def calculate_step(ctx):
-    """Step that performs calculations using AI."""
+# Define steps using the @step decorator - clean and intuitive!
+@step
+async def calculate_area(ctx: StepContext[MathInput, AreaResult]) -> AreaResult:
+    """Calculate area using AI with automatic type inference."""
     data = ctx.input_data
     
     result = await ctx.call_model(
-        name="math_calculator",
-        instructions="Calculate area and perimeter of rectangle with given dimensions",
+        name="area_calculator",
+        instructions="Calculate area of rectangle with given dimensions",
         input_schema=MathInput,
-        output_schema=MathResult,
+        output_schema=AreaResult,
         input_obj=data
     )
     return result
 
-# Create workflow
-step = create_step(id="calculate", input_model=MathInput, output_model=MathResult, run=calculate_step)
-workflow = Workflow(id="math-workflow", input_model=MathInput, output_model=MathResult).then(step).commit()
+@step
+async def calculate_perimeter(ctx: StepContext[MathInput, PerimeterResult]) -> PerimeterResult:
+    """Calculate perimeter using AI with automatic type inference."""
+    data = ctx.input_data
+    
+    result = await ctx.call_model(
+        name="perimeter_calculator",
+        instructions="Calculate perimeter of rectangle with given dimensions",
+        input_schema=MathInput,
+        output_schema=PerimeterResult,
+        input_obj=data
+    )
+    return result
+
+# Create workflow - steps are automatically configured!
+workflow = (Workflow(id="math-workflow", input_model=MathInput, output_model=(AreaResult, PerimeterResult))
+    .then(calculate_area)
+    .then(calculate_perimeter)
+    .commit())
 
 # Create agent with workflow
 agent = Agent(
@@ -154,76 +199,18 @@ result = agent.process("Your goal here")
 
 ## 📚 Examples
 
-This repository includes comprehensive examples for both agent modes:
-
-### 🔧 Tools Mode Examples
-
-**Dual Mode Demo (`examples/dual_mode_example.py`)**
-- Compare tools vs flow modes solving the same problem
-- Shows dynamic tool selection vs structured execution
-- Perfect for understanding the differences
-
-**Event Tracking (`examples/event_callback_example.py`)**
-- Real-time progress tracking with event callbacks
-- UI integration patterns for both modes
-- Comprehensive event handling demonstrations
-
 ```bash
-python examples/dual_mode_example.py
-python examples/event_callback_example.py
-```
+# Test comprehensive tools mode demonstration
+python examples/tools_mode_example.py
 
-### 🔄 Flow Mode Examples
+# Test comprehensive flow mode demonstration  
+python examples/flow_mode_example.py 
 
-**👨‍🍳 Chef Agent (`examples/chef_agent.py`)**
-A cooking assistant using structured workflows:
-- Sequential recipe generation pipeline
-- Meal ideas → detailed recipes → quantities → shopping lists
-- Shows linear workflow progression
-
-**🤖 Chatbot Agent (`examples/chatbot_agent.py`)**  
-Conversational agent with branching workflows:
-- Intent detection and classification
-- Conditional workflow paths based on user input
-- Demonstrates workflow branching patterns
-
-**📋 RFP Agent (`examples/rfp_agent.py`)**
-Sophisticated document processor:
-- **Knowledge base integration** with company information
-- **Parallel processing** using `foreach` workflows  
-- **Advanced workflow patterns** with error handling
-
-```bash
-python examples/chef_agent.py
-python examples/chatbot_agent.py
-python examples/rfp_agent.py
+# All examples require OPPER_API_KEY environment variable
+export OPPER_API_KEY="your-api-key"
 ```
 
 ## 🏗️ Core Concepts
-
-### Agent - Dual Mode Operation
-
-The `Agent` is the core class that supports both operational modes:
-
-```python
-from opper_agent import Agent
-
-# Tools Mode - Dynamic reasoning
-tools_agent = Agent(
-    name="ReasoningAgent",
-    description="Solves problems through iterative thinking",
-    tools=[tool1, tool2, tool3],
-    callback=event_handler  # Optional real-time events
-)
-
-# Flow Mode - Structured workflows  
-flow_agent = Agent(
-    name="WorkflowAgent", 
-    description="Executes predefined workflows",
-    flow=my_workflow,
-    callback=event_handler  # Optional real-time events
-)
-```
 
 ### Tools - Building Blocks for Reasoning
 
@@ -245,6 +232,35 @@ def calculate(expression: str) -> float:
 
 # Tools are automatically described to the agent
 agent = Agent(name="Helper", tools=[web_search, calculate])
+```
+
+### Steps - Workflow Building Blocks
+
+Create elegant workflow steps with the `@step` decorator:
+
+```python
+from opper_agent import step, StepContext
+
+@step
+async def analyze_sentiment(ctx: StepContext[TextInput, SentimentResult]) -> SentimentResult:
+    """Analyze text sentiment with automatic type inference."""
+    text = ctx.input_data.text
+    
+    result = await ctx.call_model(
+        name="sentiment_analyzer",
+        instructions="Analyze the sentiment of the provided text",
+        input_schema=TextInput,
+        output_schema=SentimentResult,
+        input_obj=ctx.input_data
+    )
+    return result
+
+# Configure advanced options with decorator parameters
+@step(retry={"attempts": 3}, timeout_ms=30000, on_error="continue")
+async def robust_processing(ctx: StepContext[Input, Output]) -> Output:
+    """Step with retry logic and error handling."""
+    # Implementation with automatic fallbacks
+    return await ctx.call_model(...)
 ```
 
 ### Workflows - Structured Execution Paths
@@ -575,27 +591,8 @@ Both modes emit comprehensive events for:
 - **Error handling**: Detailed error information and retries
 - **UI integration**: Perfect for building responsive interfaces
 
-View your traces in the [Opper Dashboard](https://platform.opper.ai) and consume events in real-time with the callback system.
+View your traces in the [Opper Dashboard](https://platform.opper.ai) 
 
-## 🧪 Testing
-
-Run the examples to verify your setup:
-
-```bash
-# Test dual mode comparison
-python examples/dual_mode_example.py
-
-# Test event callback system
-python examples/event_callback_example.py
-
-# Test flow mode examples
-python examples/chef_agent.py
-python examples/chatbot_agent.py
-python examples/rfp_agent.py
-
-# All examples require OPPER_API_KEY environment variable
-export OPPER_API_KEY="your-api-key"
-```
 
 ## 🤝 Contributing
 
@@ -635,17 +632,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Issues**: [GitHub Issues](https://github.com/gsandahl/wip-agent/issues)
 - **Community**: [Opper Discord](https://discord.gg/opper)
 
-## 🗺️ Roadmap
-
-- [x] **Dual Mode BaseAgent**: Tools-based reasoning and workflow execution
-- [x] **Event Callback System**: Real-time progress tracking for UIs
-- [ ] Additional workflow control structures (while loops, try/catch)
-- [ ] Built-in tool integrations (web search, file operations, etc.)
-- [ ] Visual workflow designer and debugging tools
-- [ ] Performance optimization and caching features
-- [ ] More example agents and industry-specific use cases
-- [ ] Integration with popular UI frameworks (React, Vue, etc.)
-
 ---
 
 Built with ❤️ using [Opper](https://opper.ai)
+
