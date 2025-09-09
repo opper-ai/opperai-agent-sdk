@@ -16,7 +16,7 @@ from datetime import datetime
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from pydantic import BaseModel, Field
-from opper_agent import Agent, step, Workflow, StepContext
+from opper_agent import Agent, step, Workflow, ExecutionContext
 
 
 # === DATA MODELS ===
@@ -64,12 +64,10 @@ class FinalResult(BaseModel):
 # === WORKFLOW STEPS ===
 
 @step
-async def analyze_request(ctx: StepContext[UserRequest, InitialAnalysis]) -> InitialAnalysis:
+async def analyze_request(request: UserRequest, ctx: ExecutionContext) -> InitialAnalysis:
     """Analyze the incoming user request to understand complexity and approach."""
-    request = ctx.input_data
-    
     try:
-        result = await ctx.call_model(
+        result = await ctx.llm(
             name="request_analyzer",
             instructions=(
                 "Analyze this user request to understand its complexity and determine the best approach. "
@@ -77,7 +75,7 @@ async def analyze_request(ctx: StepContext[UserRequest, InitialAnalysis]) -> Ini
             ),
             input_schema=UserRequest,
             output_schema=InitialAnalysis,
-            input_obj=request
+            input=request
         )
         
         # Opper API returns dict representation, recast to Pydantic model
@@ -103,30 +101,18 @@ async def analyze_request(ctx: StepContext[UserRequest, InitialAnalysis]) -> Ini
 
 
 @step(retry={"attempts": 2}, timeout_ms=20000)
-async def break_down_tasks(ctx: StepContext[InitialAnalysis, TaskBreakdown]) -> TaskBreakdown:
+async def break_down_tasks(analysis: InitialAnalysis, ctx: ExecutionContext) -> TaskBreakdown:
     """Break down the request into manageable subtasks."""
-    analysis = ctx.input_data
-    
-    # Handle case where analysis might be a dict from AI response
-    if isinstance(analysis, dict):
-        complexity = analysis.get('complexity', 'moderate')
-        approach = analysis.get('approach', 'systematic approach')
-        thoughts = analysis.get('thoughts', 'Breaking down the task systematically')
-    else:
-        complexity = getattr(analysis, 'complexity', 'moderate')
-        approach = getattr(analysis, 'approach', 'systematic approach')
-        thoughts = getattr(analysis, 'thoughts', 'Breaking down the task systematically')
-    
     try:
-        result = await ctx.call_model(
+        result = await ctx.llm(
             name="task_breakdown",
             instructions=(
-                f"Based on the initial analysis (complexity: {complexity}, approach: {approach}), "
+                f"Based on the initial analysis (complexity: {analysis.complexity}, approach: {analysis.approach}), "
                 "break down the work into specific subtasks. Identify dependencies and what resources might be needed."
             ),
             input_schema=InitialAnalysis,
             output_schema=TaskBreakdown,
-            input_obj=analysis
+            input=analysis
         )
         
         # Opper API returns dict representation, recast to Pydantic model
@@ -145,12 +131,10 @@ async def break_down_tasks(ctx: StepContext[InitialAnalysis, TaskBreakdown]) -> 
 
 
 @step
-async def create_execution_plan(ctx: StepContext[TaskBreakdown, ExecutionPlan]) -> ExecutionPlan:
+async def create_execution_plan(breakdown: TaskBreakdown, ctx: ExecutionContext) -> ExecutionPlan:
     """Create a detailed execution plan based on the task breakdown."""
-    breakdown = ctx.input_data
-    
     try:
-        result = await ctx.call_model(
+        result = await ctx.llm(
             name="execution_planner",
             instructions=(
                 "Create a detailed execution plan with specific steps, timeline estimation, "
@@ -158,7 +142,7 @@ async def create_execution_plan(ctx: StepContext[TaskBreakdown, ExecutionPlan]) 
             ),
             input_schema=TaskBreakdown,
             output_schema=ExecutionPlan,
-            input_obj=breakdown
+            input=breakdown
         )
         
         # Opper API returns dict representation, recast to Pydantic model
@@ -178,14 +162,12 @@ async def create_execution_plan(ctx: StepContext[TaskBreakdown, ExecutionPlan]) 
 
 # Priority-based processing steps
 @step(id="high_priority_processing")
-async def process_high_priority(ctx: StepContext[ExecutionPlan, ProgressUpdate]) -> ProgressUpdate:
+async def process_high_priority(plan: ExecutionPlan, ctx: ExecutionContext) -> ProgressUpdate:
     """Handle high-priority requests with expedited processing."""
-    plan = ctx.input_data
-    
     ctx._emit_event("priority_processing", {"level": "high", "expedited": True})
     
     try:
-        result = await ctx.call_model(
+        result = await ctx.llm(
             name="high_priority_processor",
             instructions=(
                 "Execute this plan with high priority. Focus on speed and efficiency while "
@@ -193,7 +175,7 @@ async def process_high_priority(ctx: StepContext[ExecutionPlan, ProgressUpdate])
             ),
             input_schema=ExecutionPlan,
             output_schema=ProgressUpdate,
-            input_obj=plan
+            input=plan
         )
         
         # Opper API returns dict representation, recast to Pydantic model
@@ -213,14 +195,12 @@ async def process_high_priority(ctx: StepContext[ExecutionPlan, ProgressUpdate])
 
 
 @step(id="medium_priority_processing")
-async def process_medium_priority(ctx: StepContext[ExecutionPlan, ProgressUpdate]) -> ProgressUpdate:
+async def process_medium_priority(plan: ExecutionPlan, ctx: ExecutionContext) -> ProgressUpdate:
     """Handle medium-priority requests with balanced processing."""
-    plan = ctx.input_data
-    
     ctx._emit_event("priority_processing", {"level": "medium", "balanced": True})
     
     try:
-        result = await ctx.call_model(
+        result = await ctx.llm(
             name="medium_priority_processor",
             instructions=(
                 "Execute this plan with standard priority. Balance speed and thoroughness. "
@@ -228,7 +208,7 @@ async def process_medium_priority(ctx: StepContext[ExecutionPlan, ProgressUpdate
             ),
             input_schema=ExecutionPlan,
             output_schema=ProgressUpdate,
-            input_obj=plan
+            input=plan
         )
         
         # Opper API returns dict representation, recast to Pydantic model
@@ -248,14 +228,12 @@ async def process_medium_priority(ctx: StepContext[ExecutionPlan, ProgressUpdate
 
 
 @step(id="low_priority_processing", on_error="continue")
-async def process_low_priority(ctx: StepContext[ExecutionPlan, ProgressUpdate]) -> ProgressUpdate:
+async def process_low_priority(plan: ExecutionPlan, ctx: ExecutionContext) -> ProgressUpdate:
     """Handle low-priority requests with thorough processing."""
-    plan = ctx.input_data
-    
     ctx._emit_event("priority_processing", {"level": "low", "thorough": True})
     
     try:
-        result = await ctx.call_model(
+        result = await ctx.llm(
             name="low_priority_processor",
             instructions=(
                 "Execute this plan with low priority but high thoroughness. Take time to "
@@ -263,7 +241,7 @@ async def process_low_priority(ctx: StepContext[ExecutionPlan, ProgressUpdate]) 
             ),
             input_schema=ExecutionPlan,
             output_schema=ProgressUpdate,
-            input_obj=plan
+            input=plan
         )
         
         # Opper API returns dict representation, recast to Pydantic model
@@ -283,12 +261,10 @@ async def process_low_priority(ctx: StepContext[ExecutionPlan, ProgressUpdate]) 
 
 
 @step(retry={"attempts": 3, "backoff_ms": 1000})
-async def quality_assurance(ctx: StepContext[ProgressUpdate, QualityCheck]) -> QualityCheck:
+async def quality_assurance(progress: ProgressUpdate, ctx: ExecutionContext) -> QualityCheck:
     """Perform quality assurance on the completed work."""
-    progress = ctx.input_data
-    
     try:
-        result = await ctx.call_model(
+        result = await ctx.llm(
             name="quality_assessor",
             instructions=(
                 "Evaluate the quality of the completed work. Assess strengths, identify "
@@ -296,7 +272,7 @@ async def quality_assurance(ctx: StepContext[ProgressUpdate, QualityCheck]) -> Q
             ),
             input_schema=ProgressUpdate,
             output_schema=QualityCheck,
-            input_obj=progress
+            input=progress
         )
         
         # Opper API returns dict representation, recast to Pydantic model
@@ -321,10 +297,8 @@ async def quality_assurance(ctx: StepContext[ProgressUpdate, QualityCheck]) -> Q
 
 
 @step(on_error="continue")
-async def generate_final_output(ctx: StepContext[List[Any], str]) -> str:
+async def generate_final_output(results: List[Any], ctx: ExecutionContext) -> str:
     """Generate the final output based on all previous steps."""
-    results = ctx.input_data
-    
     # Extract relevant information from the results
     progress = results[0] if results else None
     quality = results[1] if len(results) > 1 else None
@@ -343,10 +317,8 @@ async def generate_final_output(ctx: StepContext[List[Any], str]) -> str:
 
 
 @step
-async def compile_final_result(ctx: StepContext[List[Any], FinalResult]) -> FinalResult:
+async def compile_final_result(all_results: List[Any], ctx: ExecutionContext) -> FinalResult:
     """Compile all results into the final comprehensive result."""
-    all_results = ctx.input_data
-    
     # Extract components from the workflow results
     final_output = all_results[-1] if all_results else "Task completed"
     quality_check = None
@@ -389,6 +361,19 @@ def is_medium_priority(data: UserRequest) -> bool:
 def is_low_priority(data: UserRequest) -> bool:
     return data.priority.lower() == "low"
 
+# Condition functions for ExecutionPlan branching (based on risk assessment)
+def is_high_priority_plan(plan: ExecutionPlan) -> bool:
+    """Determine if execution plan indicates high priority based on risk factors."""
+    return len(plan.risk_factors) > 2 or any("urgent" in risk.lower() or "critical" in risk.lower() for risk in plan.risk_factors)
+
+def is_medium_priority_plan(plan: ExecutionPlan) -> bool:
+    """Determine if execution plan indicates medium priority."""
+    return len(plan.risk_factors) <= 2 and len(plan.risk_factors) > 0
+
+def is_low_priority_plan(plan: ExecutionPlan) -> bool:
+    """Determine if execution plan indicates low priority."""
+    return len(plan.risk_factors) <= 1
+
 
 def create_basic_workflow():
     """Create a basic sequential workflow."""
@@ -422,10 +407,18 @@ def create_priority_workflow():
         
         # Priority-based branching
         .branch([
-            (is_high_priority, process_high_priority),
-            (is_medium_priority, process_medium_priority),
-            (is_low_priority, process_low_priority),
+            (is_high_priority_plan, process_high_priority),
+            (is_medium_priority_plan, process_medium_priority),
+            (is_low_priority_plan, process_low_priority),
         ])
+        
+        # Extract single result from branch (should only match one condition)
+        .map(lambda results: results[0] if results else ProgressUpdate(
+            status="completed",
+            completed_items=["Default processing"],
+            next_actions=["Review results"],
+            issues_encountered=[]
+        ))
         
         # Quality assurance
         .then(quality_assurance)

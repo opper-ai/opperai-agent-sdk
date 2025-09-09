@@ -13,6 +13,57 @@ I = TypeVar("I", bound=BaseModel)
 O = TypeVar("O", bound=BaseModel)
 
 
+class ExecutionContext:
+    """Simplified execution context for the new data + context pattern."""
+    
+    def __init__(self, step_context):
+        """Initialize from a full StepContext."""
+        self._step_context = step_context
+    
+    @property
+    def state(self) -> Dict[str, Any]:
+        """Access to step state."""
+        return self._step_context.state
+    
+    @property
+    def run_id(self) -> str:
+        """Workflow run ID."""
+        return self._step_context.run_id
+    
+    @property
+    def step_id(self) -> str:
+        """Current step ID."""
+        return self._step_context.step_id
+    
+    @property
+    def opper(self):
+        """Access to Opper client."""
+        return self._step_context.opper
+    
+    @property
+    def tools(self) -> Dict[str, Any]:
+        """Available tools."""
+        return self._step_context.tools
+    
+    @property
+    def memory(self) -> Any:
+        """Workflow memory."""
+        return self._step_context.memory
+    
+    async def llm(self, *, name: str, instructions: str, input_schema: Optional[Type[BaseModel]] = None, 
+                 output_schema: Optional[Type[BaseModel]] = None, input: Optional[BaseModel] = None, 
+                 model: Optional[str] = None) -> BaseModel:
+        """Call AI model using opper.call syntax - delegates to full StepContext."""
+        return await self._step_context.call_model(
+            name=name, instructions=instructions, input_schema=input_schema,
+            output_schema=output_schema, input_obj=input, model=model
+        )
+    
+    def _emit_event(self, event_type: str, data: Dict[str, Any]) -> None:
+        """Emit event - delegates to full StepContext."""
+        return self._step_context._emit_event(event_type, data)
+
+
 def _serialize_model(obj: Any) -> Any:
     if isinstance(obj, BaseModel):
         return obj.model_dump()
@@ -71,9 +122,9 @@ class StepContext(Generic[I, O]):
         *,
         name: str,
         instructions: str,
-        input_schema: Type[BaseModel],
-        output_schema: Type[BaseModel],
-        input_obj: BaseModel,
+        input_schema: Optional[Type[BaseModel]] = None,
+        output_schema: Optional[Type[BaseModel]] = None,
+        input_obj: Optional[BaseModel] = None,
         model: Optional[str] = None,
     ) -> BaseModel:
         """Helper for structured LLM calls via Opper using schemas.
@@ -193,7 +244,10 @@ def step(
     Decorator to convert a function into a Step.
     
     Automatically extracts input and output models from function type hints.
-    The function should take a StepContext as its first parameter and return the output model.
+    Supports two patterns:
+    
+    1. Context-only (legacy): func(ctx: StepContext[InputModel, OutputModel]) -> OutputModel
+    2. Data + Context (preferred): func(data: InputModel, ctx: StepContext) -> OutputModel
     
     Args:
         func: The function to wrap (when used without parentheses)
@@ -206,17 +260,18 @@ def step(
         map_out: Optional output transformation function
     
     Usage:
+        # Preferred: Data + Context pattern
         @step
-        async def process_data(ctx: StepContext[InputModel, OutputModel]) -> OutputModel:
+        async def process_data(data: InputModel, ctx: StepContext) -> OutputModel:
             \"\"\"Process some data.\"\"\"
-            data = ctx.input_data
             result = await ctx.call_model(...)
             return OutputModel(...)
         
-        @step(id="custom_id", retry={"attempts": 3})
-        async def robust_step(ctx: StepContext[InputModel, OutputModel]) -> OutputModel:
-            # Implementation here
-            pass
+        # Legacy: Context-only pattern (still supported)
+        @step
+        async def process_data(ctx: StepContext[InputModel, OutputModel]) -> OutputModel:
+            data = ctx.input_data
+            return OutputModel(...)
     """
     def decorator(f: Callable) -> Step:
         # Extract step ID
@@ -225,36 +280,59 @@ def step(
         # Extract description
         step_description = description or f.__doc__ or f"Execute {f.__name__}"
         
-        # Extract type hints
+        # Extract type hints and determine pattern
         try:
             type_hints = get_type_hints(f)
+            sig = inspect.signature(f)
+            params = list(sig.parameters.values())
+            
+            if not params:
+                raise ValueError(f"Step function {f.__name__} must take at least one parameter")
             
             # Get the return type (output model)
             return_type = type_hints.get('return')
             if not return_type:
                 raise ValueError(f"Step function {f.__name__} must have a return type annotation")
             
-            # Get input model from StepContext parameter
-            sig = inspect.signature(f)
-            params = list(sig.parameters.values())
-            
-            if not params:
-                raise ValueError(f"Step function {f.__name__} must take at least one parameter (StepContext)")
-            
-            first_param = params[0]
-            if first_param.name != 'ctx':
-                raise ValueError(f"Step function {f.__name__} first parameter should be named 'ctx'")
-            
-            # Extract input and output types from StepContext[I, O]
-            ctx_type = type_hints.get('ctx') or first_param.annotation
-            
-            if hasattr(ctx_type, '__args__') and len(ctx_type.__args__) >= 2:
-                input_model = ctx_type.__args__[0]
-                output_model = ctx_type.__args__[1]
-            else:
-                # Fallback: try to extract from return type
-                input_model = BaseModel  # Default to BaseModel if can't determine
+            # Determine pattern based on parameter count and types
+            if len(params) == 1:
+                # Legacy pattern: func(ctx: StepContext[I, O]) -> O
+                first_param = params[0]
+                if first_param.name != 'ctx':
+                    raise ValueError(f"Step function {f.__name__} single parameter should be named 'ctx'")
+                
+                # Extract input and output types from StepContext[I, O]
+                ctx_type = type_hints.get('ctx') or first_param.annotation
+                
+                if hasattr(ctx_type, '__args__') and len(ctx_type.__args__) >= 2:
+                    input_model = ctx_type.__args__[0]
+                    output_model = ctx_type.__args__[1]
+                else:
+                    # Fallback: try to extract from return type
+                    input_model = BaseModel
+                    output_model = return_type
+                
+                # Use original function as-is for legacy pattern
+                step_function = f
+                
+            elif len(params) == 2:
+                # New pattern: func(data: InputModel, ctx: StepContext) -> OutputModel
+                data_param = params[0]
+                ctx_param = params[1]
+                
+                if ctx_param.name != 'ctx':
+                    raise ValueError(f"Step function {f.__name__} second parameter should be named 'ctx'")
+                
+                # Extract input model from first parameter
+                input_model = type_hints.get(data_param.name) or data_param.annotation
                 output_model = return_type
+                
+                # Create wrapper function that adapts new pattern to legacy StepContext pattern
+                async def step_function(ctx):
+                    return await f(ctx.input_data, ExecutionContext(ctx))
+                
+            else:
+                raise ValueError(f"Step function {f.__name__} must take 1 or 2 parameters, got {len(params)}")
             
         except Exception as e:
             raise ValueError(f"Could not extract type information from step function {f.__name__}: {e}")
@@ -263,7 +341,7 @@ def step(
             id=step_id,
             input_model=input_model,
             output_model=output_model,
-            run=f,
+            run=step_function,
             description=step_description,
             retry=retry,
             timeout_ms=timeout_ms,
@@ -599,6 +677,7 @@ class WorkflowRun(Generic[I, O]):
 
 __all__ = [
     "StepContext",
+    "ExecutionContext",
     "StepDef",
     "Step",
     "create_step",

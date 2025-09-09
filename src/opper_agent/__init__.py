@@ -1,5 +1,6 @@
 from .workflows import (
     StepContext,
+    ExecutionContext,
     StepDef,
     Step,
     create_step,
@@ -15,6 +16,7 @@ from .base_agent import Agent, tool
 
 __all__ = [
     "StepContext",
+    "ExecutionContext",
     "StepDef",
     "Step",
     "create_step",

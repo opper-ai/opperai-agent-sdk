@@ -100,7 +100,7 @@ print(result)
 Perfect for predictable, multi-step processes using the elegant `@step` decorator:
 
 ```python
-from opper_agent import Agent, step, Workflow, StepContext
+from opper_agent import Agent, step, Workflow, ExecutionContext
 from pydantic import BaseModel, Field
 
 class MathInput(BaseModel):
@@ -118,30 +118,26 @@ class PerimeterResult(BaseModel):
 
 # Define steps using the @step decorator - clean and intuitive!
 @step
-async def calculate_area(ctx: StepContext[MathInput, AreaResult]) -> AreaResult:
-    """Calculate area using AI with automatic type inference."""
-    data = ctx.input_data
-    
-    result = await ctx.call_model(
+async def calculate_area(data: MathInput, ctx: ExecutionContext) -> AreaResult:
+    """Calculate area using AI with direct data access."""
+    result = await ctx.llm(
         name="area_calculator",
         instructions="Calculate area of rectangle with given dimensions",
         input_schema=MathInput,
         output_schema=AreaResult,
-        input_obj=data
+        input=data
     )
     return result
 
 @step
-async def calculate_perimeter(ctx: StepContext[MathInput, PerimeterResult]) -> PerimeterResult:
-    """Calculate perimeter using AI with automatic type inference."""
-    data = ctx.input_data
-    
-    result = await ctx.call_model(
+async def calculate_perimeter(data: MathInput, ctx: ExecutionContext) -> PerimeterResult:
+    """Calculate perimeter using AI with direct data access."""
+    result = await ctx.llm(
         name="perimeter_calculator",
         instructions="Calculate perimeter of rectangle with given dimensions",
         input_schema=MathInput,
         output_schema=PerimeterResult,
-        input_obj=data
+        input=data
     )
     return result
 
@@ -236,39 +232,54 @@ agent = Agent(name="Helper", tools=[web_search, calculate])
 
 ### Steps - Workflow Building Blocks
 
-Create elegant workflow steps with the `@step` decorator:
+Create elegant workflow steps with the `@step` decorator using the clean data + context pattern:
 
 ```python
-from opper_agent import step, StepContext
+from opper_agent import step, ExecutionContext
 
 @step
-async def analyze_sentiment(ctx: StepContext[TextInput, SentimentResult]) -> SentimentResult:
-    """Analyze text sentiment with automatic type inference."""
-    text = ctx.input_data.text
-    
-    result = await ctx.call_model(
+async def analyze_sentiment(text: TextInput, ctx: ExecutionContext) -> SentimentResult:
+    """Analyze text sentiment with direct data access."""
+    result = await ctx.llm(
         name="sentiment_analyzer",
         instructions="Analyze the sentiment of the provided text",
         input_schema=TextInput,
         output_schema=SentimentResult,
-        input_obj=ctx.input_data
+        input=text
     )
     return result
 
 # Configure advanced options with decorator parameters
 @step(retry={"attempts": 3}, timeout_ms=30000, on_error="continue")
-async def robust_processing(ctx: StepContext[Input, Output]) -> Output:
+async def robust_processing(data: InputModel, ctx: ExecutionContext) -> OutputModel:
     """Step with retry logic and error handling."""
-    # Implementation with automatic fallbacks
-    return await ctx.call_model(...)
+    try:
+        result = await ctx.llm(
+            name="robust_processor",
+            instructions="Process data with error handling",
+            input_schema=InputModel,
+            output_schema=OutputModel,
+            input=data
+        )
+        return result
+    except Exception as e:
+        ctx._emit_event("processing_error", {"error": str(e)})
+        # Return fallback result
+        return OutputModel(...)
 ```
+
+**Key Benefits of Data + Context Pattern:**
+- 🎯 **Direct Data Access**: Input data is the first parameter, immediately available
+- 🧠 **Better Readability**: Clear what data the step operates on
+- 💡 **IDE Support**: Better autocomplete and type hints for the input data
+- 🔧 **Full Power**: Still access to AI calls, events, state via `ctx`
 
 ### Workflows - Structured Execution Paths
 
 Create sophisticated workflows with the `@step` decorator and advanced control flow:
 
 ```python
-from opper_agent import Agent, step, Workflow, StepContext
+from opper_agent import Agent, step, Workflow, ExecutionContext
 from pydantic import BaseModel, Field
 from typing import List
 
@@ -287,40 +298,34 @@ class ProcessedDoc(BaseModel):
     enhanced_content: str = Field(description="Enhanced document content")
     metadata: dict = Field(description="Processing metadata")
 
-# Define steps using @step decorator
+# Define steps using @step decorator with data + context pattern
 @step
-async def analyze_document(ctx: StepContext[DocumentInput, Analysis]) -> Analysis:
+async def analyze_document(doc: DocumentInput, ctx: ExecutionContext) -> Analysis:
     """Analyze document content for sentiment and topics."""
-    doc = ctx.input_data
-    
-    result = await ctx.call_model(
+    result = await ctx.llm(
         name="document_analyzer",
         instructions="Analyze the document for sentiment and key topics",
         input_schema=DocumentInput,
         output_schema=Analysis,
-        input_obj=doc
+        input=doc
     )
     return result
 
 @step(retry={"attempts": 3}, timeout_ms=30000)
-async def enhance_content(ctx: StepContext[Analysis, str]) -> str:
+async def enhance_content(analysis: Analysis, ctx: ExecutionContext) -> str:
     """Enhance content based on analysis."""
-    analysis = ctx.input_data
-    
-    result = await ctx.call_model(
+    result = await ctx.llm(
         name="content_enhancer",
         instructions=f"Enhance content focusing on {', '.join(analysis.topics)}",
         input_schema=Analysis,
         output_schema=str,
-        input_obj=analysis
+        input=analysis
     )
     return result
 
 @step(on_error="continue")
-async def add_metadata(ctx: StepContext[Analysis, dict]) -> dict:
+async def add_metadata(analysis: Analysis, ctx: ExecutionContext) -> dict:
     """Add processing metadata."""
-    analysis = ctx.input_data
-    
     return {
         "processed_at": "2024-01-01T00:00:00Z",
         "topics_count": len(analysis.topics),
@@ -335,16 +340,14 @@ def is_normal_priority(data):
     return data.priority == "normal"
 
 @step
-async def priority_processing(ctx: StepContext[DocumentInput, DocumentInput]) -> DocumentInput:
+async def priority_processing(doc: DocumentInput, ctx: ExecutionContext) -> DocumentInput:
     """Special processing for high-priority documents."""
-    doc = ctx.input_data
     # Add priority-specific processing
     return doc
 
 @step
-async def batch_processing(ctx: StepContext[DocumentInput, DocumentInput]) -> DocumentInput:
+async def batch_processing(doc: DocumentInput, ctx: ExecutionContext) -> DocumentInput:
     """Batch processing for normal/low priority documents."""
-    doc = ctx.input_data
     # Add batch-specific processing
     return doc
 
@@ -383,11 +386,17 @@ workflow = (Workflow(id="document-processor", input_model=DocumentInput, output_
 **Parallel Processing with `foreach`:**
 ```python
 @step
-async def process_item(ctx: StepContext[Item, ProcessedItem]) -> ProcessedItem:
+async def process_item(item: Item, ctx: ExecutionContext) -> ProcessedItem:
     """Process individual items in parallel."""
-    item = ctx.input_data
-    # Process each item
-    return ProcessedItem(...)
+    # Process each item directly
+    result = await ctx.llm(
+        name="item_processor",
+        instructions="Process this item",
+        input_schema=Item,
+        output_schema=ProcessedItem,
+        input=item
+    )
+    return result
 
 workflow = (Workflow(id="batch-processor", input_model=BatchInput, output_model=BatchOutput)
     .foreach(
@@ -401,14 +410,26 @@ workflow = (Workflow(id="batch-processor", input_model=BatchInput, output_model=
 **Conditional Branching:**
 ```python
 @step
-async def urgent_handler(ctx: StepContext[Task, Result]) -> Result:
+async def urgent_handler(task: Task, ctx: ExecutionContext) -> Result:
     """Handle urgent tasks with special processing."""
-    return await ctx.call_model(name="urgent_processor", ...)
+    return await ctx.llm(
+        name="urgent_processor",
+        instructions="Handle this urgent task with high priority",
+        input_schema=Task,
+        output_schema=Result,
+        input=task
+    )
 
 @step  
-async def normal_handler(ctx: StepContext[Task, Result]) -> Result:
+async def normal_handler(task: Task, ctx: ExecutionContext) -> Result:
     """Handle normal tasks with standard processing."""
-    return await ctx.call_model(name="normal_processor", ...)
+    return await ctx.llm(
+        name="normal_processor",
+        instructions="Handle this task with standard processing",
+        input_schema=Task,
+        output_schema=Result,
+        input=task
+    )
 
 workflow = (Workflow(id="task-router", input_model=Task, output_model=Result)
     .branch([
@@ -421,10 +442,16 @@ workflow = (Workflow(id="task-router", input_model=Task, output_model=Result)
 **Error Handling and Retries:**
 ```python
 @step(retry={"attempts": 3, "backoff_ms": 1000}, on_error="continue")
-async def robust_step(ctx: StepContext[Input, Output]) -> Output:
+async def robust_step(data: Input, ctx: ExecutionContext) -> Output:
     """Step with automatic retries and graceful error handling."""
     try:
-        result = await ctx.call_model(name="api_call", ...)
+        result = await ctx.llm(
+            name="api_call",
+            instructions="Process this data with error handling",
+            input_schema=Input,
+            output_schema=Output,
+            input=data
+        )
         return result
     except Exception as e:
         # Log error and return fallback
