@@ -230,51 +230,7 @@ def calculate(expression: str) -> float:
 agent = Agent(name="Helper", tools=[web_search, calculate])
 ```
 
-### Steps - Workflow Building Blocks
-
-Create elegant workflow steps with the `@step` decorator using the clean data + context pattern:
-
-```python
-from opper_agent import step, ExecutionContext
-
-@step
-async def analyze_sentiment(text: TextInput, ctx: ExecutionContext) -> SentimentResult:
-    """Analyze text sentiment with direct data access."""
-    result = await ctx.llm(
-        name="sentiment_analyzer",
-        instructions="Analyze the sentiment of the provided text",
-        input_schema=TextInput,
-        output_schema=SentimentResult,
-        input=text
-    )
-    return result
-
-# Configure advanced options with decorator parameters
-@step(retry={"attempts": 3}, timeout_ms=30000, on_error="continue")
-async def robust_processing(data: InputModel, ctx: ExecutionContext) -> OutputModel:
-    """Step with retry logic and error handling."""
-    try:
-        result = await ctx.llm(
-            name="robust_processor",
-            instructions="Process data with error handling",
-            input_schema=InputModel,
-            output_schema=OutputModel,
-            input=data
-        )
-        return result
-    except Exception as e:
-        ctx._emit_event("processing_error", {"error": str(e)})
-        # Return fallback result
-        return OutputModel(...)
-```
-
-**Key Benefits of Data + Context Pattern:**
-- 🎯 **Direct Data Access**: Input data is the first parameter, immediately available
-- 🧠 **Better Readability**: Clear what data the step operates on
-- 💡 **IDE Support**: Better autocomplete and type hints for the input data
-- 🔧 **Full Power**: Still access to AI calls, events, state via `ctx`
-
-### Workflows - Structured Execution Paths
+### Flows - Structured Execution Paths
 
 Create sophisticated workflows with the `@step` decorator and advanced control flow:
 
@@ -381,112 +337,7 @@ workflow = (Workflow(id="document-processor", input_model=DocumentInput, output_
     .commit())
 ```
 
-### Advanced Workflow Patterns
-
-**Parallel Processing with `foreach`:**
-```python
-@step
-async def process_item(item: Item, ctx: ExecutionContext) -> ProcessedItem:
-    """Process individual items in parallel."""
-    # Process each item directly
-    result = await ctx.llm(
-        name="item_processor",
-        instructions="Process this item",
-        input_schema=Item,
-        output_schema=ProcessedItem,
-        input=item
-    )
-    return result
-
-workflow = (Workflow(id="batch-processor", input_model=BatchInput, output_model=BatchOutput)
-    .foreach(
-        process_item,
-        concurrency=5,  # Process 5 items simultaneously
-        map_func=lambda batch: batch.items  # Extract items to process
-    )
-    .commit())
-```
-
-**Conditional Branching:**
-```python
-@step
-async def urgent_handler(task: Task, ctx: ExecutionContext) -> Result:
-    """Handle urgent tasks with special processing."""
-    return await ctx.llm(
-        name="urgent_processor",
-        instructions="Handle this urgent task with high priority",
-        input_schema=Task,
-        output_schema=Result,
-        input=task
-    )
-
-@step  
-async def normal_handler(task: Task, ctx: ExecutionContext) -> Result:
-    """Handle normal tasks with standard processing."""
-    return await ctx.llm(
-        name="normal_processor",
-        instructions="Handle this task with standard processing",
-        input_schema=Task,
-        output_schema=Result,
-        input=task
-    )
-
-workflow = (Workflow(id="task-router", input_model=Task, output_model=Result)
-    .branch([
-        (lambda task: task.priority == "urgent", urgent_handler),
-        (lambda task: task.priority == "normal", normal_handler),
-    ])
-    .commit())
-```
-
-**Error Handling and Retries:**
-```python
-@step(retry={"attempts": 3, "backoff_ms": 1000}, on_error="continue")
-async def robust_step(data: Input, ctx: ExecutionContext) -> Output:
-    """Step with automatic retries and graceful error handling."""
-    try:
-        result = await ctx.llm(
-            name="api_call",
-            instructions="Process this data with error handling",
-            input_schema=Input,
-            output_schema=Output,
-            input=data
-        )
-        return result
-    except Exception as e:
-        # Log error and return fallback
-        ctx._emit_event("step_fallback", {"error": str(e)})
-        return Output(fallback=True)
-```
-
-### Event System - Real-time Progress Tracking
-
-Monitor agent execution with comprehensive events:
-
-```python
-def ui_event_handler(event_type: str, data: dict):
-    """Handle events for UI updates"""
-    timestamp = data.get('timestamp', 0)
-    
-    # Tools mode events
-    if event_type == "thought_created":
-        update_thinking_display(data['thought']['reasoning'])
-    elif event_type == "action_executed":
-        update_action_log(data['action_result'])
-    
-    # Flow mode events  
-    elif event_type == "workflow_step_start":
-        update_progress_bar(f"Starting {data['step_id']}")
-    elif event_type == "workflow_model_call_start":
-        show_ai_indicator(data['call_name'])
-    
-    # Universal events
-    elif event_type == "goal_completed":
-        show_completion_status(data['achieved'])
-
-# Events work with both modes
-agent = Agent(name="TrackedAgent", tools=[...], callback=ui_event_handler)
-```
+### Advanced Flow Patterns
 
 ## 🔄 Advanced Features
 
@@ -564,37 +415,6 @@ create_step(
 )
 ```
 
-### Knowledge Base Integration
-
-Works with both modes for enhanced AI capabilities:
-
-```python
-# Setup knowledge base
-knowledge_base = opper.knowledge.create(name="my-kb")
-opper.knowledge.add(
-    knowledge_base_id=kb.id, 
-    content="Your knowledge content", 
-    metadata={"category": "docs"}
-)
-
-# In Tools Mode - tools can query knowledge
-@tool
-def search_docs(query: str, _parent_span_id: str = None) -> str:
-    """Search internal documentation."""
-    # Access through opper client in tool
-    results = opper.knowledge.query(knowledge_base_id=kb_id, query=query)
-    return format_results(results)
-
-# In Flow Mode - steps can query knowledge
-async def knowledge_step(ctx):
-results = ctx.opper.knowledge.query(
-    knowledge_base_id=kb_id, 
-    query="What information do I need?",
-    top_k=5
-)
-    return process_knowledge(results)
-```
-
 ## 📊 Monitoring and Tracing
 
 Both agent modes provide comprehensive observability:
@@ -619,7 +439,6 @@ Both modes emit comprehensive events for:
 - **UI integration**: Perfect for building responsive interfaces
 
 View your traces in the [Opper Dashboard](https://platform.opper.ai) 
-
 
 ## 🤝 Contributing
 
