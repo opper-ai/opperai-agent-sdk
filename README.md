@@ -38,17 +38,51 @@ flow_agent = Agent(
 
 ## 📦 Installation
 
+### Prerequisites
+
+- **Python >= 3.10**
+- **Git** for cloning the repository
+
+### Install from Source
+
+1. **Clone the repository:**
 ```bash
-pip install opper-agent-sdk
+git clone https://github.com/opper-ai/opperai-agent-sdk.git
+cd opperai-agent-sdk
 ```
 
-Or install from source:
+2. **Install the package:**
 
+**Option 1: Editable Installation (Recommended for Development)**
 ```bash
-git clone https://github.com/gsandahl/wip-agent.git
-cd wip-agent
 pip install -e .
 ```
+*Changes to the code are immediately reflected - perfect for development and testing.*
+
+**Option 2: Regular Installation**
+```bash
+pip install .
+```
+*Installs as a regular package - more stable for production use.*
+
+**Option 3: Using UV (Modern Package Manager)**
+```bash
+uv pip install -e .
+```
+*Faster installation with better dependency resolution.*
+
+3. **Verify Installation:**
+```bash
+python -c "from opper_agent import Agent; print('✅ opper-agent-sdk installed successfully!')"
+```
+
+### Dependencies
+
+The package automatically installs these dependencies:
+- `pydantic >= 2.6.0` - Data validation and parsing
+- `opperai >= 0.3.0` - Opper API client
+- `rich >= 13.7.0` - Rich text formatting
+- `typing-extensions >= 4.9.0` - Extended typing support
 
 ## 🏃 Quick Start
 
@@ -448,8 +482,8 @@ Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guideli
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/gsandahl/wip-agent.git
-cd wip-agent
+git clone https://github.com/opper-ai/opperai-agent-sdk.git
+cd opperai-agent-sdk
 ```
 
 2. **Create a virtual environment**
@@ -475,7 +509,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🆘 Support
 
 - **Documentation**: [Opper Documentation](https://docs.opper.ai)
-- **Issues**: [GitHub Issues](https://github.com/gsandahl/wip-agent/issues)
+- **Issues**: [GitHub Issues](https://github.com/opper-ai/opperai-agent-sdk/issues)
 - **Community**: [Opper Discord](https://discord.gg/opper)
 
 ---
