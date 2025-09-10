@@ -93,6 +93,7 @@ class StepContext(Generic[I, O]):
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]],
         emit: Callable[[Dict[str, Any]], None],
         checkpoint: Callable[[Any], Awaitable[None]],
+        default_model: Optional[str] = None,
     ) -> None:
         self.input_data = input_data
         self.state = state
@@ -105,6 +106,7 @@ class StepContext(Generic[I, O]):
         self.event_callback = event_callback
         self.emit = emit
         self.checkpoint = checkpoint
+        self.default_model = default_model
 
     def _emit_event(self, event_type: str, data: Dict[str, Any] = None):
         """Emit an event if callback is available."""
@@ -131,10 +133,13 @@ class StepContext(Generic[I, O]):
 
         Dynamic variables are passed through input, not interpolated into the prompt.
         """
+        # Use provided model or fall back to default model
+        effective_model = model or self.default_model
+        
         # Emit model call start event
         self._emit_event("model_call_start", {
             "call_name": name,
-            "model": model,
+            "model": effective_model,
             "input_schema": input_schema.__name__ if input_schema else None,
             "output_schema": output_schema.__name__ if output_schema else None
         })
@@ -146,14 +151,14 @@ class StepContext(Generic[I, O]):
                 input_schema=input_schema,
                 output_schema=output_schema,
                 input=input_obj,
-                model=model,
+                model=effective_model,
                 parent_span_id=self.parent_span_id,
             )
             
             # Emit model call success event
             self._emit_event("model_call_success", {
                 "call_name": name,
-                "model": model
+                "model": effective_model
             })
             
             return result.json_payload  # Expecting dict compatible with output_schema
@@ -162,7 +167,7 @@ class StepContext(Generic[I, O]):
             # Emit model call error event
             self._emit_event("model_call_error", {
                 "call_name": name,
-                "model": model,
+                "model": effective_model,
                 "error": str(e)
             })
             raise
@@ -459,8 +464,9 @@ class FinalizedWorkflow(Generic[I, O]):
         tools: Optional[Dict[str, Any]] = None,
         memory: Any = None,
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        default_model: Optional[str] = None,
     ) -> "WorkflowRun[I, O]":
-        return WorkflowRun(self, opper=opper, storage=storage, tools=tools or {}, memory=memory, event_callback=event_callback)
+        return WorkflowRun(self, opper=opper, storage=storage, tools=tools or {}, memory=memory, event_callback=event_callback, default_model=default_model)
 
 
 class WorkflowRun(Generic[I, O]):
@@ -473,6 +479,7 @@ class WorkflowRun(Generic[I, O]):
         tools: Dict[str, Any],
         memory: Any,
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]],
+        default_model: Optional[str] = None,
     ) -> None:
         self.wf = wf
         self.opper = opper
@@ -480,6 +487,7 @@ class WorkflowRun(Generic[I, O]):
         self.tools = tools
         self.memory = memory
         self.event_callback = event_callback
+        self.default_model = default_model
         self.run_id = str(uuid.uuid4())
         self.parent_span_id: Optional[str] = None
 
@@ -580,7 +588,7 @@ class WorkflowRun(Generic[I, O]):
 
     async def _exec_item(self, item: Any, input_obj: Any) -> Any:
         if isinstance(item, FinalizedWorkflow):
-            sub_run = WorkflowRun(item, opper=self.opper, storage=self.storage, tools=self.tools, memory=self.memory, event_callback=self.event_callback)
+            sub_run = WorkflowRun(item, opper=self.opper, storage=self.storage, tools=self.tools, memory=self.memory, event_callback=self.event_callback, default_model=self.default_model)
             # Chain sub-run under the same parent run span
             sub_run.parent_span_id = self.parent_span_id
             return await sub_run.start(input_data=input_obj)
@@ -615,6 +623,7 @@ class WorkflowRun(Generic[I, O]):
             event_callback=self.event_callback,
             emit=lambda e: None,
             checkpoint=self._checkpoint,
+            default_model=self.default_model,
         )
 
         attempts = int(step.defn.retry.get("attempts", 1) if step.defn.retry else 1)

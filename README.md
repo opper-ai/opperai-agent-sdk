@@ -171,7 +171,8 @@ async def calculate_perimeter(data: MathInput, ctx: ExecutionContext) -> Perimet
         instructions="Calculate perimeter of rectangle with given dimensions",
         input_schema=MathInput,
         output_schema=PerimeterResult,
-        input=data
+        input=data,
+        model="anthropic/claude-3.5-sonnet"  # Optional: specify model
     )
     return result
 
@@ -193,6 +194,66 @@ agent = Agent(
 result = agent.process("Calculate area and perimeter of a 5x3 rectangle")
 print(result)
 ```
+
+## 🤖 Model Selection
+
+You can specify AI models at the **agent level** (default for all steps) or **step level** (override for specific steps). The SDK supports all models available through the Opper API:
+
+### **Agent-Level Default Model:**
+```python
+# Set default model for all workflow steps
+agent = Agent(
+    name="ClaudeAgent",
+    description="An agent that uses Claude by default",
+    flow=my_workflow,
+    model="anthropic/claude-3.5-sonnet"  # Default model for all steps
+)
+
+# Or for tools mode
+tools_agent = Agent(
+    name="GPTAgent", 
+    description="An agent that uses GPT-4 by default",
+    tools=[my_tools],
+    model="groq/gpt-oss-120b"  # Default model for reasoning
+)
+```
+
+### **Step-Level Model Override:**
+```python
+# Agent with default model
+agent = Agent(
+    name="MixedModelAgent",
+    flow=my_workflow,
+    model="openai/gpt-4o-mini"  # Default: fast and cost-effective
+)
+
+@step
+async def analyze_with_default(data: InputModel, ctx: ExecutionContext) -> OutputModel:
+    """Uses agent's default model (gpt-4o-mini)."""
+    return await ctx.llm(
+        name="analyzer",
+        instructions="Analyze this data",
+        input_schema=InputModel,
+        output_schema=OutputModel,
+        input=data
+        # No model specified - uses agent default
+    )
+
+@step  
+async def complex_reasoning(data: InputModel, ctx: ExecutionContext) -> OutputModel:
+    """Override default for complex reasoning."""
+    return await ctx.llm(
+        name="reasoner", 
+        instructions="Perform complex reasoning on this data",
+        input_schema=InputModel,
+        output_schema=OutputModel,
+        input=data,
+        model="anthropic/claude-4.1-opus"  # Override agent default
+    )
+```
+
+
+*If no model is specified at agent or step level, Opper uses a default model.*
 
 ## 📡 Real-time Status with Event Callbacks
 

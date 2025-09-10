@@ -220,7 +220,8 @@ class Agent:
         tools: Optional[List[Tool]] = None,
         flow: Optional[FinalizedWorkflow] = None,
         description: Optional[str] = None,
-        callback: Optional[callable] = None
+        callback: Optional[callable] = None,
+        model: Optional[str] = None
     ):
         """
         Initialize the base agent.
@@ -235,6 +236,7 @@ class Agent:
             flow: Optional FinalizedWorkflow for flow-based operations (mutually exclusive with tools)
             description: Optional description (if provided, get_agent_description() doesn't need to be implemented)
             callback: Optional callback function to receive status updates (event_type, data)
+            model: Optional default model to use for all LLM calls (can be overridden in individual steps)
         """
         # Validate mode selection
         if tools is not None and flow is not None:
@@ -246,6 +248,7 @@ class Agent:
         self.verbose = verbose
         self.output_schema = output_schema
         self.callback = callback
+        self.model = model
         
         # Mode selection
         self.mode = "flow" if flow is not None else "tools"
@@ -608,7 +611,8 @@ Be thorough in your reasoning and decisive in your action selection.""",
                 opper=self.opper,
                 storage=InMemoryStorage(),
                 tools={},  # Tools are handled differently in flows
-                event_callback=workflow_event_callback
+                event_callback=workflow_event_callback,
+                default_model=self.model
             )
             workflow_run.parent_span_id = trace.id
             
