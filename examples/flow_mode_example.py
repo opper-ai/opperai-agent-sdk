@@ -9,9 +9,7 @@ branching, parallelism, and error handling.
 
 import os
 import sys
-import asyncio
-from typing import List, Dict, Any, Optional
-from datetime import datetime
+from typing import List, Dict, Any
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -21,32 +19,47 @@ from opper_agent import Agent, step, Workflow, ExecutionContext
 
 # === DATA MODELS ===
 
+
 class UserRequest(BaseModel):
     goal: str = Field(description="The user's goal or request")
-    priority: str = Field(description="Priority level: high, medium, low", default="medium")
-    category: str = Field(description="Request category: analysis, creation, processing", default="processing")
+    priority: str = Field(
+        description="Priority level: high, medium, low", default="medium"
+    )
+    category: str = Field(
+        description="Request category: analysis, creation, processing",
+        default="processing",
+    )
+
 
 class InitialAnalysis(BaseModel):
     thoughts: str = Field(description="Initial thoughts about the request")
-    complexity: str = Field(description="Complexity assessment: simple, moderate, complex")
+    complexity: str = Field(
+        description="Complexity assessment: simple, moderate, complex"
+    )
     estimated_steps: int = Field(description="Estimated number of steps needed")
     approach: str = Field(description="Recommended approach to handle the request")
+
 
 class TaskBreakdown(BaseModel):
     subtasks: List[str] = Field(description="List of subtasks to complete")
     dependencies: List[str] = Field(description="Task dependencies and ordering")
     resources_needed: List[str] = Field(description="Resources or tools needed")
 
+
 class ExecutionPlan(BaseModel):
     plan_steps: List[str] = Field(description="Detailed execution steps")
     timeline: str = Field(description="Estimated timeline for completion")
     risk_factors: List[str] = Field(description="Potential risks or challenges")
 
+
 class ProgressUpdate(BaseModel):
     status: str = Field(description="Current status: in_progress, completed, blocked")
     completed_items: List[str] = Field(description="Items that have been completed")
     next_actions: List[str] = Field(description="Next actions to take")
-    issues_encountered: List[str] = Field(description="Any issues encountered", default_factory=list)
+    issues_encountered: List[str] = Field(
+        description="Any issues encountered", default_factory=list
+    )
+
 
 class QualityCheck(BaseModel):
     quality_score: float = Field(description="Quality score from 0-10")
@@ -54,17 +67,23 @@ class QualityCheck(BaseModel):
     improvements: List[str] = Field(description="Suggested improvements")
     meets_requirements: bool = Field(description="Whether output meets requirements")
 
+
 class FinalResult(BaseModel):
     result: str = Field(description="The final result or output")
     summary: str = Field(description="Summary of what was accomplished")
     quality_assessment: QualityCheck
-    metadata: Dict[str, Any] = Field(description="Additional metadata about the process")
+    metadata: Dict[str, Any] = Field(
+        description="Additional metadata about the process"
+    )
 
 
 # === WORKFLOW STEPS ===
 
+
 @step
-async def analyze_request(request: UserRequest, ctx: ExecutionContext) -> InitialAnalysis:
+async def analyze_request(
+    request: UserRequest, ctx: ExecutionContext
+) -> InitialAnalysis:
     """Analyze the incoming user request to understand complexity and approach."""
     try:
         result = await ctx.llm(
@@ -75,19 +94,22 @@ async def analyze_request(request: UserRequest, ctx: ExecutionContext) -> Initia
             ),
             input_schema=UserRequest,
             output_schema=InitialAnalysis,
-            input=request
+            input=request,
         )
-        
+
         # Opper API returns dict representation, recast to Pydantic model
         if isinstance(result, dict):
             result = InitialAnalysis.model_validate(result)
-        
+
         # Emit custom event for tracking
-        ctx._emit_event("analysis_complete", {
-            "complexity": result.complexity,
-            "estimated_steps": result.estimated_steps
-        })
-        
+        ctx._emit_event(
+            "analysis_complete",
+            {
+                "complexity": result.complexity,
+                "estimated_steps": result.estimated_steps,
+            },
+        )
+
         return result
     except Exception as e:
         # Fallback analysis
@@ -96,12 +118,14 @@ async def analyze_request(request: UserRequest, ctx: ExecutionContext) -> Initia
             thoughts="Performing basic analysis due to processing limitations",
             complexity="moderate",
             estimated_steps=4,
-            approach="systematic step-by-step approach"
+            approach="systematic step-by-step approach",
         )
 
 
 @step(retry={"attempts": 2}, timeout_ms=20000)
-async def break_down_tasks(analysis: InitialAnalysis, ctx: ExecutionContext) -> TaskBreakdown:
+async def break_down_tasks(
+    analysis: InitialAnalysis, ctx: ExecutionContext
+) -> TaskBreakdown:
     """Break down the request into manageable subtasks."""
     try:
         result = await ctx.llm(
@@ -112,26 +136,33 @@ async def break_down_tasks(analysis: InitialAnalysis, ctx: ExecutionContext) -> 
             ),
             input_schema=InitialAnalysis,
             output_schema=TaskBreakdown,
-            input=analysis
+            input=analysis,
         )
-        
+
         # Opper API returns dict representation, recast to Pydantic model
         if isinstance(result, dict):
             result = TaskBreakdown.model_validate(result)
-        
+
         return result
     except Exception as e:
         # Fallback to creating a basic task breakdown
         ctx._emit_event("fallback_task_breakdown", {"error": str(e)})
         return TaskBreakdown(
-            subtasks=["Analyze requirements", "Plan approach", "Execute task", "Review results"],
+            subtasks=[
+                "Analyze requirements",
+                "Plan approach",
+                "Execute task",
+                "Review results",
+            ],
             dependencies=["Sequential execution required"],
-            resources_needed=["Analysis tools", "Planning framework"]
+            resources_needed=["Analysis tools", "Planning framework"],
         )
 
 
 @step
-async def create_execution_plan(breakdown: TaskBreakdown, ctx: ExecutionContext) -> ExecutionPlan:
+async def create_execution_plan(
+    breakdown: TaskBreakdown, ctx: ExecutionContext
+) -> ExecutionPlan:
     """Create a detailed execution plan based on the task breakdown."""
     try:
         result = await ctx.llm(
@@ -142,30 +173,37 @@ async def create_execution_plan(breakdown: TaskBreakdown, ctx: ExecutionContext)
             ),
             input_schema=TaskBreakdown,
             output_schema=ExecutionPlan,
-            input=breakdown
+            input=breakdown,
         )
-        
+
         # Opper API returns dict representation, recast to Pydantic model
         if isinstance(result, dict):
             result = ExecutionPlan.model_validate(result)
-        
+
         return result
     except Exception as e:
         # Fallback execution plan
         ctx._emit_event("fallback_execution_plan", {"error": str(e)})
         return ExecutionPlan(
-            plan_steps=["Initial analysis", "Detailed planning", "Implementation", "Quality review"],
+            plan_steps=[
+                "Initial analysis",
+                "Detailed planning",
+                "Implementation",
+                "Quality review",
+            ],
             timeline="Estimated 2-4 hours for completion",
-            risk_factors=["Resource constraints", "Technical complexity"]
+            risk_factors=["Resource constraints", "Technical complexity"],
         )
 
 
 # Priority-based processing steps
 @step(id="high_priority_processing")
-async def process_high_priority(plan: ExecutionPlan, ctx: ExecutionContext) -> ProgressUpdate:
+async def process_high_priority(
+    plan: ExecutionPlan, ctx: ExecutionContext
+) -> ProgressUpdate:
     """Handle high-priority requests with expedited processing."""
     ctx._emit_event("priority_processing", {"level": "high", "expedited": True})
-    
+
     try:
         result = await ctx.llm(
             name="high_priority_processor",
@@ -175,13 +213,13 @@ async def process_high_priority(plan: ExecutionPlan, ctx: ExecutionContext) -> P
             ),
             input_schema=ExecutionPlan,
             output_schema=ProgressUpdate,
-            input=plan
+            input=plan,
         )
-        
+
         # Opper API returns dict representation, recast to Pydantic model
         if isinstance(result, dict):
             result = ProgressUpdate.model_validate(result)
-        
+
         return result
     except Exception as e:
         # Fallback progress update
@@ -190,15 +228,17 @@ async def process_high_priority(plan: ExecutionPlan, ctx: ExecutionContext) -> P
             status="completed",
             completed_items=["High-priority task processed with expedited approach"],
             next_actions=["Proceed to quality assurance"],
-            issues_encountered=["Processing completed with fallback methods"]
+            issues_encountered=["Processing completed with fallback methods"],
         )
 
 
 @step(id="medium_priority_processing")
-async def process_medium_priority(plan: ExecutionPlan, ctx: ExecutionContext) -> ProgressUpdate:
+async def process_medium_priority(
+    plan: ExecutionPlan, ctx: ExecutionContext
+) -> ProgressUpdate:
     """Handle medium-priority requests with balanced processing."""
     ctx._emit_event("priority_processing", {"level": "medium", "balanced": True})
-    
+
     try:
         result = await ctx.llm(
             name="medium_priority_processor",
@@ -208,13 +248,13 @@ async def process_medium_priority(plan: ExecutionPlan, ctx: ExecutionContext) ->
             ),
             input_schema=ExecutionPlan,
             output_schema=ProgressUpdate,
-            input=plan
+            input=plan,
         )
-        
+
         # Opper API returns dict representation, recast to Pydantic model
         if isinstance(result, dict):
             result = ProgressUpdate.model_validate(result)
-        
+
         return result
     except Exception as e:
         # Fallback progress update
@@ -223,15 +263,17 @@ async def process_medium_priority(plan: ExecutionPlan, ctx: ExecutionContext) ->
             status="completed",
             completed_items=["Medium-priority task processed with balanced approach"],
             next_actions=["Proceed to quality assurance"],
-            issues_encountered=[]
+            issues_encountered=[],
         )
 
 
 @step(id="low_priority_processing", on_error="continue")
-async def process_low_priority(plan: ExecutionPlan, ctx: ExecutionContext) -> ProgressUpdate:
+async def process_low_priority(
+    plan: ExecutionPlan, ctx: ExecutionContext
+) -> ProgressUpdate:
     """Handle low-priority requests with thorough processing."""
     ctx._emit_event("priority_processing", {"level": "low", "thorough": True})
-    
+
     try:
         result = await ctx.llm(
             name="low_priority_processor",
@@ -241,13 +283,13 @@ async def process_low_priority(plan: ExecutionPlan, ctx: ExecutionContext) -> Pr
             ),
             input_schema=ExecutionPlan,
             output_schema=ProgressUpdate,
-            input=plan
+            input=plan,
         )
-        
+
         # Opper API returns dict representation, recast to Pydantic model
         if isinstance(result, dict):
             result = ProgressUpdate.model_validate(result)
-        
+
         return result
     except Exception as e:
         # Fallback progress update
@@ -256,12 +298,14 @@ async def process_low_priority(plan: ExecutionPlan, ctx: ExecutionContext) -> Pr
             status="completed",
             completed_items=["Low-priority task processed with thorough approach"],
             next_actions=["Proceed to quality assurance"],
-            issues_encountered=[]
+            issues_encountered=[],
         )
 
 
 @step(retry={"attempts": 3, "backoff_ms": 1000})
-async def quality_assurance(progress: ProgressUpdate, ctx: ExecutionContext) -> QualityCheck:
+async def quality_assurance(
+    progress: ProgressUpdate, ctx: ExecutionContext
+) -> QualityCheck:
     """Perform quality assurance on the completed work."""
     try:
         result = await ctx.llm(
@@ -272,18 +316,21 @@ async def quality_assurance(progress: ProgressUpdate, ctx: ExecutionContext) -> 
             ),
             input_schema=ProgressUpdate,
             output_schema=QualityCheck,
-            input=progress
+            input=progress,
         )
-        
+
         # Opper API returns dict representation, recast to Pydantic model
         if isinstance(result, dict):
             result = QualityCheck.model_validate(result)
-        
-        ctx._emit_event("quality_check_complete", {
-            "score": result.quality_score,
-            "meets_requirements": result.meets_requirements
-        })
-        
+
+        ctx._emit_event(
+            "quality_check_complete",
+            {
+                "score": result.quality_score,
+                "meets_requirements": result.meets_requirements,
+            },
+        )
+
         return result
     except Exception as e:
         # Fallback quality check
@@ -292,7 +339,7 @@ async def quality_assurance(progress: ProgressUpdate, ctx: ExecutionContext) -> 
             quality_score=7.5,
             strengths=["Task completed with standard approach"],
             improvements=["Could enhance with more detailed analysis"],
-            meets_requirements=True
+            meets_requirements=True,
         )
 
 
@@ -302,41 +349,43 @@ async def generate_final_output(results: List[Any], ctx: ExecutionContext) -> st
     # Extract relevant information from the results
     progress = results[0] if results else None
     quality = results[1] if len(results) > 1 else None
-    
-    if progress and hasattr(progress, 'completed_items'):
+
+    if progress and hasattr(progress, "completed_items"):
         completed_work = ", ".join(progress.completed_items)
     else:
         completed_work = "Work completed successfully"
-    
+
     final_output = f"Task completed: {completed_work}"
-    
-    if quality and hasattr(quality, 'quality_score'):
+
+    if quality and hasattr(quality, "quality_score"):
         final_output += f" (Quality score: {quality.quality_score}/10)"
-    
+
     return final_output
 
 
 @step
-async def compile_final_result(all_results: List[Any], ctx: ExecutionContext) -> FinalResult:
+async def compile_final_result(
+    all_results: List[Any], ctx: ExecutionContext
+) -> FinalResult:
     """Compile all results into the final comprehensive result."""
     # Extract components from the workflow results
     final_output = all_results[-1] if all_results else "Task completed"
     quality_check = None
-    
+
     # Find quality check in results
     for result in all_results:
-        if hasattr(result, 'quality_score'):
+        if hasattr(result, "quality_score"):
             quality_check = result
             break
-    
+
     if not quality_check:
         quality_check = QualityCheck(
             quality_score=8.0,
             strengths=["Task completed successfully"],
             improvements=["No specific improvements identified"],
-            meets_requirements=True
+            meets_requirements=True,
         )
-    
+
     return FinalResult(
         result=final_output,
         summary="Request processed through structured workflow with quality assurance",
@@ -344,31 +393,40 @@ async def compile_final_result(all_results: List[Any], ctx: ExecutionContext) ->
         metadata={
             "processing_time": "estimated",
             "steps_completed": len(all_results),
-            "workflow_version": "1.0"
-        }
+            "workflow_version": "1.0",
+        },
     )
 
 
 # === WORKFLOW DEFINITIONS ===
 
+
 # Condition functions for branching
 def is_high_priority(data: UserRequest) -> bool:
     return data.priority.lower() == "high"
 
+
 def is_medium_priority(data: UserRequest) -> bool:
     return data.priority.lower() == "medium"
+
 
 def is_low_priority(data: UserRequest) -> bool:
     return data.priority.lower() == "low"
 
+
 # Condition functions for ExecutionPlan branching (based on risk assessment)
 def is_high_priority_plan(plan: ExecutionPlan) -> bool:
     """Determine if execution plan indicates high priority based on risk factors."""
-    return len(plan.risk_factors) > 2 or any("urgent" in risk.lower() or "critical" in risk.lower() for risk in plan.risk_factors)
+    return len(plan.risk_factors) > 2 or any(
+        "urgent" in risk.lower() or "critical" in risk.lower()
+        for risk in plan.risk_factors
+    )
+
 
 def is_medium_priority_plan(plan: ExecutionPlan) -> bool:
     """Determine if execution plan indicates medium priority."""
     return len(plan.risk_factors) <= 2 and len(plan.risk_factors) > 0
+
 
 def is_low_priority_plan(plan: ExecutionPlan) -> bool:
     """Determine if execution plan indicates low priority."""
@@ -377,104 +435,135 @@ def is_low_priority_plan(plan: ExecutionPlan) -> bool:
 
 def create_basic_workflow():
     """Create a basic sequential workflow."""
-    return (Workflow(id="basic-processor", input_model=UserRequest, output_model=FinalResult)
+    return (
+        Workflow(
+            id="basic-processor", input_model=UserRequest, output_model=FinalResult
+        )
         .then(analyze_request)
         .then(break_down_tasks)
         .then(create_execution_plan)
         .then(process_medium_priority)  # Default to medium priority
         .then(quality_assurance)
-        .map(lambda quality_check: FinalResult(
-            result="Basic workflow completed",
-            summary="Processed request through systematic workflow with quality assurance",
-            quality_assessment=quality_check if hasattr(quality_check, 'quality_score') else QualityCheck(
-                quality_score=7.5,
-                strengths=["Systematic processing"],
-                improvements=["Could add more validation"],
-                meets_requirements=True
-            ),
-            metadata={"workflow_type": "basic", "steps": 5}
-        ))
-        .commit())
+        .map(
+            lambda quality_check: FinalResult(
+                result="Basic workflow completed",
+                summary="Processed request through systematic workflow with quality assurance",
+                quality_assessment=quality_check
+                if hasattr(quality_check, "quality_score")
+                else QualityCheck(
+                    quality_score=7.5,
+                    strengths=["Systematic processing"],
+                    improvements=["Could add more validation"],
+                    meets_requirements=True,
+                ),
+                metadata={"workflow_type": "basic", "steps": 5},
+            )
+        )
+        .commit()
+    )
 
 
 def create_priority_workflow():
     """Create a workflow with priority-based branching."""
-    return (Workflow(id="priority-processor", input_model=UserRequest, output_model=FinalResult)
+    return (
+        Workflow(
+            id="priority-processor", input_model=UserRequest, output_model=FinalResult
+        )
         # Initial analysis phase
         .then(analyze_request)
         .then(break_down_tasks)
         .then(create_execution_plan)
-        
         # Priority-based branching
-        .branch([
-            (is_high_priority_plan, process_high_priority),
-            (is_medium_priority_plan, process_medium_priority),
-            (is_low_priority_plan, process_low_priority),
-        ])
-        
+        .branch(
+            [
+                (is_high_priority_plan, process_high_priority),
+                (is_medium_priority_plan, process_medium_priority),
+                (is_low_priority_plan, process_low_priority),
+            ]
+        )
         # Extract single result from branch (should only match one condition)
-        .map(lambda results: results[0] if results else ProgressUpdate(
-            status="completed",
-            completed_items=["Default processing"],
-            next_actions=["Review results"],
-            issues_encountered=[]
-        ))
-        
+        .map(
+            lambda results: results[0]
+            if results
+            else ProgressUpdate(
+                status="completed",
+                completed_items=["Default processing"],
+                next_actions=["Review results"],
+                issues_encountered=[],
+            )
+        )
         # Quality assurance
         .then(quality_assurance)
-        
         # Final compilation
-        .map(lambda quality_check: FinalResult(
-            result="Priority-based workflow completed",
-            summary="Processed with priority-specific handling and quality assurance",
-            quality_assessment=quality_check if hasattr(quality_check, 'quality_score') else QualityCheck(
-                quality_score=8.5,
-                strengths=["Priority-aware processing", "Comprehensive quality check"],
-                improvements=["Could add more parallel processing"],
-                meets_requirements=True
-            ),
-            metadata={"workflow_type": "priority", "steps": 6}
-        ))
-        .commit())
+        .map(
+            lambda quality_check: FinalResult(
+                result="Priority-based workflow completed",
+                summary="Processed with priority-specific handling and quality assurance",
+                quality_assessment=quality_check
+                if hasattr(quality_check, "quality_score")
+                else QualityCheck(
+                    quality_score=8.5,
+                    strengths=[
+                        "Priority-aware processing",
+                        "Comprehensive quality check",
+                    ],
+                    improvements=["Could add more parallel processing"],
+                    meets_requirements=True,
+                ),
+                metadata={"workflow_type": "priority", "steps": 6},
+            )
+        )
+        .commit()
+    )
 
 
 def create_parallel_workflow():
     """Create a workflow with parallel processing."""
-    return (Workflow(id="parallel-processor", input_model=UserRequest, output_model=FinalResult)
+    return (
+        Workflow(
+            id="parallel-processor", input_model=UserRequest, output_model=FinalResult
+        )
         # Initial analysis
         .then(analyze_request)
-        
         # Parallel processing of planning tasks
-        .parallel([
-            break_down_tasks,
-            # Second parallel task - just duplicate the task breakdown for demo
-            break_down_tasks
-        ])
-        
+        .parallel(
+            [
+                break_down_tasks,
+                # Second parallel task - just duplicate the task breakdown for demo
+                break_down_tasks,
+            ]
+        )
         # Sequential processing with first parallel result
         .map(lambda results: results[0])  # Take first task breakdown result
         .then(create_execution_plan)
         .then(process_medium_priority)
-        
         # Quality assurance
         .then(quality_assurance)
-        
         # Final result compilation
-        .map(lambda quality_check: FinalResult(
-            result="Parallel workflow completed",
-            summary="Processed with parallel execution through multiple phases",
-            quality_assessment=quality_check if hasattr(quality_check, 'quality_score') else QualityCheck(
-                quality_score=9.0,
-                strengths=["Parallel processing efficiency", "Streamlined execution"],
-                improvements=["Could add more validation layers"],
-                meets_requirements=True
-            ),
-            metadata={"workflow_type": "parallel", "parallel_tasks_completed": 2}
-        ))
-        .commit())
+        .map(
+            lambda quality_check: FinalResult(
+                result="Parallel workflow completed",
+                summary="Processed with parallel execution through multiple phases",
+                quality_assessment=quality_check
+                if hasattr(quality_check, "quality_score")
+                else QualityCheck(
+                    quality_score=9.0,
+                    strengths=[
+                        "Parallel processing efficiency",
+                        "Streamlined execution",
+                    ],
+                    improvements=["Could add more validation layers"],
+                    meets_requirements=True,
+                ),
+                metadata={"workflow_type": "parallel", "parallel_tasks_completed": 2},
+            )
+        )
+        .commit()
+    )
 
 
 # === DEMONSTRATION SCENARIOS ===
+
 
 def create_basic_agent(api_key=None):
     """Create an agent with basic sequential workflow."""
@@ -484,7 +573,7 @@ def create_basic_agent(api_key=None):
         description="Processes requests through a basic sequential workflow",
         flow=workflow,
         opper_api_key=api_key,
-        verbose=True
+        verbose=True,
     )
 
 
@@ -496,7 +585,7 @@ def create_priority_agent(api_key=None):
         description="Processes requests with priority-based branching and specialized handling",
         flow=workflow,
         opper_api_key=api_key,
-        verbose=True
+        verbose=True,
     )
 
 
@@ -508,62 +597,62 @@ def create_parallel_agent(api_key=None):
         description="Processes requests using parallel execution for improved efficiency",
         flow=workflow,
         opper_api_key=api_key,
-        verbose=True
+        verbose=True,
     )
 
 
 def demo_basic_workflow(api_key=None):
     """Demonstrate basic sequential workflow."""
     print("=== BASIC SEQUENTIAL WORKFLOW ===")
-    
+
     agent = create_basic_agent(api_key)
-    
+
     test_requests = [
         "Create a simple report about renewable energy trends",
         "Analyze the pros and cons of remote work",
-        "Design a basic website layout for a coffee shop"
+        "Design a basic website layout for a coffee shop",
     ]
-    
+
     for i, request in enumerate(test_requests, 1):
         print(f"\n--- Request {i} ---")
         print(f"Task: {request}")
         try:
             result = agent.process(request)
-            if hasattr(result, 'summary'):
+            if hasattr(result, "summary"):
                 print(f"Result: {result.summary}")
                 print(f"Quality Score: {result.quality_assessment.quality_score}/10")
             else:
                 print(f"Result: {result}")
         except Exception as e:
             print(f"Error: {str(e)[:150]}...")
-    
+
     return agent
 
 
 def demo_priority_workflow(api_key=None):
     """Demonstrate priority-based workflow with branching."""
     print("\n=== PRIORITY-BASED WORKFLOW ===")
-    
+
     agent = create_priority_agent(api_key)
-    
+
     priority_requests = [
         UserRequest(
             goal="URGENT: Fix critical security vulnerability in production system",
             priority="high",
-            category="processing"
+            category="processing",
         ),
         UserRequest(
             goal="Create monthly performance report for management review",
-            priority="medium", 
-            category="analysis"
+            priority="medium",
+            category="analysis",
         ),
         UserRequest(
             goal="Research potential new office locations for future expansion",
             priority="low",
-            category="analysis"
-        )
+            category="analysis",
+        ),
     ]
-    
+
     for i, request in enumerate(priority_requests, 1):
         print(f"\n--- Priority Request {i} ({request.priority.upper()}) ---")
         print(f"Task: {request.goal}")
@@ -571,73 +660,81 @@ def demo_priority_workflow(api_key=None):
             # Convert UserRequest to a structured goal string that includes priority info
             goal_with_priority = f"Priority: {request.priority.upper()} | Category: {request.category} | Goal: {request.goal}"
             result = agent.process(goal_with_priority)
-            if hasattr(result, 'summary'):
+            if hasattr(result, "summary"):
                 print(f"Result: {result.summary}")
                 print(f"Quality Score: {result.quality_assessment.quality_score}/10")
-                print(f"Workflow Type: {result.metadata.get('workflow_type', 'unknown')}")
+                print(
+                    f"Workflow Type: {result.metadata.get('workflow_type', 'unknown')}"
+                )
             else:
                 print(f"Result: {result}")
         except Exception as e:
             print(f"Error: {str(e)[:150]}...")
-    
+
     return agent
 
 
 def demo_parallel_workflow(api_key=None):
     """Demonstrate parallel processing workflow."""
     print("\n=== PARALLEL PROCESSING WORKFLOW ===")
-    
+
     agent = create_parallel_agent(api_key)
-    
+
     complex_requests = [
         "Conduct comprehensive market analysis for new product launch including competitor research, customer surveys, and financial projections",
         "Develop complete training program for new employees including materials, schedules, assessments, and feedback systems",
-        "Plan company retreat including venue research, activity planning, budget analysis, and logistics coordination"
+        "Plan company retreat including venue research, activity planning, budget analysis, and logistics coordination",
     ]
-    
+
     for i, request in enumerate(complex_requests, 1):
         print(f"\n--- Complex Request {i} ---")
         print(f"Task: {request}")
         try:
             result = agent.process(request)
-            if hasattr(result, 'summary'):
+            if hasattr(result, "summary"):
                 print(f"Result: {result.summary}")
                 print(f"Quality Score: {result.quality_assessment.quality_score}/10")
-                print(f"Parallel Validation: {result.metadata.get('validation_passed', 'N/A')}")
+                print(
+                    f"Parallel Validation: {result.metadata.get('validation_passed', 'N/A')}"
+                )
             else:
                 print(f"Result: {result}")
         except Exception as e:
             print(f"Error: {str(e)[:150]}...")
-    
+
     return agent
 
 
 def demo_workflow_comparison(api_key=None):
     """Compare different workflow approaches on the same task."""
     print("\n=== WORKFLOW COMPARISON ===")
-    
-    test_request = "Create a comprehensive social media strategy for a startup tech company"
-    
+
+    test_request = (
+        "Create a comprehensive social media strategy for a startup tech company"
+    )
+
     workflows = [
         ("Basic", create_basic_agent(api_key)),
         ("Priority", create_priority_agent(api_key)),
-        ("Parallel", create_parallel_agent(api_key))
+        ("Parallel", create_parallel_agent(api_key)),
     ]
-    
+
     print(f"Test Task: {test_request}")
     print("\nComparing workflow approaches:")
-    
+
     for workflow_name, agent in workflows:
         print(f"\n--- {workflow_name} Workflow ---")
         try:
             if workflow_name == "Priority":
                 # Use structured goal string for priority workflow
-                goal_with_priority = f"Priority: MEDIUM | Category: creation | Goal: {test_request}"
+                goal_with_priority = (
+                    f"Priority: MEDIUM | Category: creation | Goal: {test_request}"
+                )
                 result = agent.process(goal_with_priority)
             else:
                 result = agent.process(test_request)
-            
-            if hasattr(result, 'summary'):
+
+            if hasattr(result, "summary"):
                 print(f"✅ {result.summary}")
                 print(f"   Quality: {result.quality_assessment.quality_score}/10")
                 print(f"   Steps: {result.metadata.get('steps', 'unknown')}")
@@ -651,23 +748,25 @@ def main():
     """Main demonstration function."""
     print("🔄 Flow Mode Example - Agent with Structured Workflows")
     print("=" * 65)
-    
+
     # Check if API key is available
     api_key = os.getenv("OPPER_API_KEY")
     if not api_key:
         print("⚠️  OPPER_API_KEY not set. Using dummy key for demonstration.")
         print("   Set OPPER_API_KEY environment variable to run with real AI.")
         api_key = "dummy-key-for-demo"
-    
-    print(f"🔑 Using API key: {'*' * 20 if api_key != 'dummy-key-for-demo' else 'dummy-key-for-demo'}")
-    
+
+    print(
+        f"🔑 Using API key: {'*' * 20 if api_key != 'dummy-key-for-demo' else 'dummy-key-for-demo'}"
+    )
+
     try:
         # Run different workflow demonstrations
         demo_basic_workflow(api_key)
         demo_priority_workflow(api_key)
         demo_parallel_workflow(api_key)
         demo_workflow_comparison(api_key)
-        
+
         print("\n" + "=" * 65)
         print("✅ Flow Mode Demonstration Complete!")
         print("\n🎯 Key Takeaways:")
@@ -678,7 +777,7 @@ def main():
         print("   • Quality assurance steps ensure consistent output")
         print("   • Event callbacks provide real-time progress tracking")
         print("   • Structured data models ensure type safety throughout")
-        
+
     except Exception as e:
         if "dummy-key" in str(e).lower() or "api" in str(e).lower():
             print(f"\n⚠️  API Error (expected with dummy key): {str(e)[:100]}...")
@@ -686,6 +785,7 @@ def main():
         else:
             print(f"\n❌ Unexpected error: {e}")
             import traceback
+
             traceback.print_exc()
 
 
