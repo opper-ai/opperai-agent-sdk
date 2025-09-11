@@ -255,6 +255,60 @@ async def complex_reasoning(data: InputModel, ctx: ExecutionContext) -> OutputMo
 
 *If no model is specified at agent or step level, Opper uses a default model.*
 
+## 🔗 MCP (Model Context Protocol) Integration
+
+Connect your agents to external tools and data sources using the standardized Model Context Protocol developed by Anthropic. **Fully supports HTTP-SSE transport** for modern MCP servers including the Opper documentation server.
+
+### **Quick MCP Setup:**
+```python
+from opper_agent import Agent, create_mcp_tools
+from opper_agent.mcp_client import MCPServerConfig
+
+# Create Opper docs MCP server configuration
+opper_docs_server = MCPServerConfig(
+    name="opper",
+    url="https://docs.opper.ai/mcp",
+    transport="http-sse",
+    enabled=True
+)
+
+# Create MCP tools from Opper docs server
+mcp_tools = create_mcp_tools([opper_docs_server])
+
+# Create agent with MCP tools
+agent = Agent(
+    name="MCPAgent",
+    description="Agent with access to Opper documentation",
+    tools=mcp_tools(),
+    model="anthropic/claude-3.5-sonnet"
+)
+
+# Agent can now access live Opper documentation and provide guidance
+result = agent.process("What are the best practices for building AI applications with Opper?")
+# Returns comprehensive information from the Opper knowledge base
+```
+
+### **Custom MCP Servers:**
+```python
+from opper_agent.mcp_client import MCPServerConfig
+
+# Configure custom MCP server
+custom_server = MCPServerConfig(
+    name="my_custom_server",
+    command="node",
+    args=["my-mcp-server.js", "--config", "config.json"],
+    timeout=30.0
+)
+
+# Use with agent
+mcp_tools = create_mcp_tools([custom_server])
+agent = Agent(name="CustomAgent", tools=mcp_tools())
+```
+
+**Transport Support:**
+- **HTTP-SSE**: Modern web-based MCP servers (like Opper docs)
+- **stdio**: Traditional subprocess-based MCP servers (requires Node.js/npm)
+
 ## 📡 Real-time Status with Event Callbacks
 
 Track agent progress in real-time for UI integration:
@@ -295,11 +349,16 @@ result = agent.process("Your goal here")
 python examples/tools_mode_example.py
 
 # Test comprehensive flow mode demonstration  
-python examples/flow_mode_example.py 
+python examples/flow_mode_example.py
+
+# Test MCP integration with Opper docs server
+python examples/mcp_example.py
 
 # All examples require OPPER_API_KEY environment variable
 export OPPER_API_KEY="your-api-key"
 ```
+
+**Note:** The MCP example demonstrates live integration with the Opper documentation server, allowing agents to access real-time information about Opper features, APIs, and best practices.
 
 ## 🏗️ Core Concepts
 
