@@ -504,8 +504,8 @@ def main():
         demo_tool_discovery(api_key)
 
         print("\n" + "=" * 60)
-        print("✅ Tools Mode Demonstration Complete!")
-        print("\n🎯 Key Takeaways:")
+        print("Tools Mode Demonstration Complete!")
+        print("\nKey Takeaways:")
         print("   • Agents dynamically select appropriate tools for each task")
         print("   • Tools can be combined for complex multi-step reasoning")
         print("   • @tool decorator makes function integration seamless")
@@ -514,10 +514,10 @@ def main():
 
     except Exception as e:
         if "dummy-key" in str(e).lower() or "api" in str(e).lower():
-            print(f"\n⚠️  API Error (expected with dummy key): {str(e)[:100]}...")
+            print(f"\nWARNING: API Error (expected with dummy key): {str(e)[:100]}...")
             print("   Set OPPER_API_KEY to run with real AI capabilities")
         else:
-            print(f"\n❌ Unexpected error: {e}")
+            print(f"\nERROR: Unexpected error: {e}")
             import traceback
 
             traceback.print_exc()

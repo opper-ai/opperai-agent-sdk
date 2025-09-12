@@ -735,18 +735,18 @@ def demo_workflow_comparison(api_key=None):
                 result = agent.process(test_request)
 
             if hasattr(result, "summary"):
-                print(f"✅ {result.summary}")
+                print(f"SUCCESS: {result.summary}")
                 print(f"   Quality: {result.quality_assessment.quality_score}/10")
                 print(f"   Steps: {result.metadata.get('steps', 'unknown')}")
             else:
-                print(f"✅ {result}")
+                print(f"SUCCESS: {result}")
         except Exception as e:
-            print(f"❌ Error: {str(e)[:100]}...")
+            print(f"ERROR: {str(e)[:100]}...")
 
 
 def main():
     """Main demonstration function."""
-    print("🔄 Flow Mode Example - Agent with Structured Workflows")
+    print("Flow Mode Example - Agent with Structured Workflows")
     print("=" * 65)
 
     # Check if API key is available
@@ -783,7 +783,7 @@ def main():
             print(f"\n⚠️  API Error (expected with dummy key): {str(e)[:100]}...")
             print("   Set OPPER_API_KEY to run with real AI capabilities")
         else:
-            print(f"\n❌ Unexpected error: {e}")
+            print(f"\nERROR: Unexpected error: {e}")
             import traceback
 
             traceback.print_exc()

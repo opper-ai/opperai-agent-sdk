@@ -618,8 +618,8 @@ Be thorough in your reasoning and decisive in your action selection.""",
         for cycle in self.execution_history:
             iteration = cycle.get("iteration", "?")
             tool = cycle.get("action_tool", "unknown")
-            success = "✅" if cycle.get("action_success", False) else "❌"
-            goal_achieved = "🎯" if cycle.get("goal_achieved", False) else ""
+            success = "SUCCESS" if cycle.get("action_success", False) else "FAILED"
+            goal_achieved = "GOAL_ACHIEVED" if cycle.get("goal_achieved", False) else ""
 
             summary += f"  {iteration}. Think→{tool} {success}{goal_achieved}"
 
@@ -649,9 +649,9 @@ Be thorough in your reasoning and decisive in your action selection.""",
         )
 
         if self.verbose:
-            print(f"🎯 Starting flow-based goal: {goal}")
-            print(f"🤖 Agent: {self.name}")
-            print(f"🔄 Flow: {self.flow.id}")
+            print(f"Starting flow-based goal: {goal}")
+            print(f"Agent: {self.name}")
+            print(f"Flow: {self.flow.id}")
 
         try:
             # Create event callback for workflow events
@@ -805,14 +805,14 @@ Be thorough in your reasoning and decisive in your action selection.""",
             )
 
             if self.verbose:
-                print(f"✅ Flow completed successfully")
-                print(f"📄 Result: {result}")
+                print(f"Flow completed successfully")
+                print(f"Result: {result}")
 
             return result
 
         except Exception as e:
             if self.verbose:
-                print(f"❌ Flow execution failed: {str(e)}")
+                print(f"Flow execution failed: {str(e)}")
 
             # Update trace with error
             self.opper.spans.update(span_id=trace.id, output=f"Error: {str(e)}")
@@ -881,10 +881,10 @@ Be thorough in your reasoning and decisive in your action selection.""",
         )
 
         if self.verbose:
-            print(f"🎯 Starting goal: {goal}")
+            print(f"Starting goal: {goal}")
             print(f"🤖 Agent: {self.name}")
             print(f"🔧 Available tools: {[tool.name for tool in self.tools]}")
-            print(f"🔄 Max iterations: {self.max_iterations}")
+            print(f"Max iterations: {self.max_iterations}")
 
         iteration = 0
         goal_achieved_early = False
@@ -911,14 +911,14 @@ Be thorough in your reasoning and decisive in your action selection.""",
 
             if self.verbose:
                 print(f"🧠 Thought: {thought.reasoning}")
-                print(f"🎯 Goal achieved: {thought.goal_achieved}")
-                print(f"⚡ Next action: {thought.tool_name}")
+                print(f"Goal achieved: {thought.goal_achieved}")
+                print(f"Next action: {thought.tool_name}")
 
             # Check if goal is achieved
             if thought.goal_achieved:
                 goal_achieved_early = True
                 if self.verbose:
-                    print("✅ Goal achieved!")
+                    print("Goal achieved!")
                 break
 
             # Step 2: Act (if action is needed)
@@ -940,10 +940,10 @@ Be thorough in your reasoning and decisive in your action selection.""",
 
                 if self.verbose:
                     print(
-                        f"⚡ Action: {action_result.tool_name} with {thought.tool_parameters}"
+                        f"Action: {action_result.tool_name} with {thought.tool_parameters}"
                     )
-                    print(f"📊 Result: {action_result.result}")
-                    print(f"✅ Success: {action_result.success}")
+                    print(f"Result: {action_result.result}")
+                    print(f"Success: {action_result.success}")
             else:
                 # No action needed
                 action_result = ActionResult(
@@ -1008,26 +1008,26 @@ Be thorough in your reasoning and decisive in your action selection.""",
         self.opper.spans.update(span_id=trace.id, output=str(final_result))
 
         if self.verbose:
-            print(f"\n🏁 Completed in {iteration} iterations")
+            print(f"\nCompleted in {iteration} iterations")
 
             # Check if we reached max iterations without achieving goal
             if not goal_achieved_early and iteration >= self.max_iterations:
                 print(
-                    f"⚠️  Reached maximum iterations ({self.max_iterations}) without achieving goal"
+                    f"Warning: Reached maximum iterations ({self.max_iterations}) without achieving goal"
                 )
                 print(
-                    f"💡 Consider increasing max_iterations or breaking down the goal into smaller steps"
+                    f"Consider increasing max_iterations or breaking down the goal into smaller steps"
                 )
 
             # Handle both structured and unstructured results
             if isinstance(final_result, dict) and "achieved" in final_result:
-                print(f"✅ Goal achieved: {final_result['achieved']}")
+                print(f"Goal achieved: {final_result['achieved']}")
             else:
                 goal_achieved = self.is_goal_achieved(goal, self.execution_history)
-                print(f"✅ Goal achieved: {goal_achieved}")
+                print(f"Goal achieved: {goal_achieved}")
                 if not goal_achieved and iteration >= self.max_iterations:
                     print(
-                        f"🔄 Agent stopped due to iteration limit, goal may be partially complete"
+                        f"Agent stopped due to iteration limit, goal may be partially complete"
                     )
                 print(f"📄 Structured result: {final_result}")
 

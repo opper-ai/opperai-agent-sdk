@@ -17,14 +17,16 @@ try:
     from opper_agent import Agent, MCPServers, create_mcp_tools, mcp_tools
     from opper_agent.mcp_client import MCPServerConfig
 except ImportError:
-    print("❌ MCP support not available. This might be due to missing dependencies.")
+    print(
+        "ERROR: MCP support not available. This might be due to missing dependencies."
+    )
     print("   MCP functionality requires additional setup.")
     sys.exit(1)
 
 
 def demo_mcp_tools_basic():
     """Demonstrate basic MCP tool integration."""
-    print("\n🔧 MCP Tools - Basic Integration")
+    print("\nMCP Tools - Basic Integration")
     print("=" * 50)
 
     try:
@@ -40,7 +42,7 @@ def demo_mcp_tools_basic():
         # Get the tools (this will connect to MCP servers)
         tools = mcp_tools_func()
 
-        print(f"✅ Successfully loaded {len(tools)} MCP tools:")
+        print(f"Successfully loaded {len(tools)} MCP tools:")
         for tool in tools:
             print(f"   • {tool.name}: {tool.description}")
 
@@ -66,9 +68,9 @@ def demo_mcp_tools_basic():
 
             try:
                 result = agent.process(goal)
-                print(f"✅ Result: {result}")
+                print(f"Result: {result}")
             except Exception as e:
-                print(f"❌ Error: {str(e)}")
+                print(f"Error: {str(e)}")
 
     except Exception as e:
         print(f"❌ Error setting up MCP tools: {e}")
@@ -98,13 +100,13 @@ class MCPAgent(Agent):
 
 def demo_mcp_decorator():
     """Demonstrate MCP integration using decorator pattern."""
-    print("\n🎨 MCP Tools - Decorator Pattern")
+    print("\nMCP Tools - Decorator Pattern")
     print("=" * 50)
 
     try:
         agent = MCPAgent()
 
-        print(f"✅ Created agent with MCP tools")
+        print(f"Created agent with MCP tools")
         print(f"   Available tools: {len(agent.get_tools())}")
 
         # Test the decorated agent
@@ -119,12 +121,12 @@ def demo_mcp_decorator():
             print(f"❌ Error: {str(e)}")
 
     except Exception as e:
-        print(f"❌ Error creating decorated agent: {e}")
+        print(f"Error creating decorated agent: {e}")
 
 
 def demo_custom_mcp_server():
     """Demonstrate using custom MCP server configuration."""
-    print("\n⚙️  MCP Tools - Custom Server Configuration")
+    print("\nMCP Tools - Custom Server Configuration")
     print("=" * 50)
 
     try:
@@ -140,7 +142,7 @@ def demo_custom_mcp_server():
         mcp_tools_func = create_mcp_tools([custom_server])
         tools = mcp_tools_func()
 
-        print(f"✅ Loaded {len(tools)} tools from custom MCP server")
+        print(f"Loaded {len(tools)} tools from custom MCP server")
 
         # Create agent
         agent = Agent(
@@ -163,7 +165,7 @@ def demo_custom_mcp_server():
             print(f"❌ Error: {str(e)}")
 
     except Exception as e:
-        print(f"❌ Error with custom MCP server: {e}")
+        print(f"Error with custom MCP server: {e}")
         print(
             "   Make sure you have network connectivity to access the Opper docs MCP server."
         )
@@ -171,7 +173,7 @@ def demo_custom_mcp_server():
 
 async def demo_mcp_async():
     """Demonstrate async MCP operations."""
-    print("\n⚡ MCP Tools - Async Operations")
+    print("\nMCP Tools - Async Operations")
     print("=" * 50)
 
     try:
@@ -192,26 +194,26 @@ async def demo_mcp_async():
         # Connect to all servers
         async with manager:
             tools = manager.get_all_tools()
-            print(f"✅ Connected to MCP servers with {len(tools)} total tools")
+            print(f"Connected to MCP servers with {len(tools)} total tools")
 
             # List tools by server
             for server_name in manager.adapters.keys():
                 server_tools = manager.get_server_tools(server_name)
                 print(f"   • {server_name}: {len(server_tools)} tools")
 
-        print("✅ Successfully disconnected from all MCP servers")
+        print("Successfully disconnected from all MCP servers")
 
     except Exception as e:
-        print(f"❌ Error with async MCP operations: {e}")
+        print(f"Error with async MCP operations: {e}")
 
 
 def check_mcp_prerequisites():
     """Check if MCP prerequisites are available."""
-    print("\n🔍 Checking MCP Prerequisites")
+    print("\nChecking MCP Prerequisites")
     print("=" * 40)
 
     # For Opper docs MCP server, we mainly need network connectivity
-    print("ℹ️  Opper docs MCP server uses HTTP-SSE transport")
+    print("INFO: Opper docs MCP server uses HTTP-SSE transport")
     print("   No Node.js/npm installation required")
 
     # Check network connectivity for Opper docs MCP server
@@ -219,9 +221,9 @@ def check_mcp_prerequisites():
         import urllib.request
 
         urllib.request.urlopen("https://docs.opper.ai", timeout=5)
-        print("✅ Network connectivity to Opper docs available")
+        print("Network connectivity to Opper docs available")
     except Exception as e:
-        print(f"⚠️  Could not reach Opper docs: {e}")
+        print(f"WARNING: Could not reach Opper docs: {e}")
         print("   Network connectivity required for Opper docs MCP server")
         return False
 
@@ -237,7 +239,7 @@ def main():
         print("   MCP examples will show structure but may fail on actual LLM calls.")
         print("")
 
-    print("🔗 Model Context Protocol (MCP) Integration Examples")
+    print("Model Context Protocol (MCP) Integration Examples")
     print("=" * 60)
     print("MCP enables agents to connect to external tools and data sources")
     print("through a standardized protocol developed by Anthropic.")
@@ -246,7 +248,7 @@ def main():
 
     # Check prerequisites
     if not check_mcp_prerequisites():
-        print("\n❌ MCP prerequisites not met.")
+        print("\nERROR: MCP prerequisites not met.")
         print("Please check your network connectivity.")
         return
 
@@ -256,18 +258,18 @@ def main():
     demo_custom_mcp_server()
 
     # Run async example
-    print("\n⚡ Running async MCP example...")
+    print("\nRunning async MCP example...")
     asyncio.run(demo_mcp_async())
 
     print("\n" + "=" * 70)
-    print("✅ MCP Integration Examples Complete!")
-    print("\n🎯 Key Takeaways:")
+    print("MCP Integration Examples Complete!")
+    print("\nKey Takeaways:")
     print("   • MCP enables standardized integration with external tools")
     print("   • Opper provides MCP server for documentation access")
     print("   • Both functional and decorator patterns supported")
     print("   • Async operations supported for advanced use cases")
     print("   • Tools automatically converted to Opper Agent format")
-    print("\n📚 Opper MCP Server Features:")
+    print("\nOpper MCP Server Features:")
     print("   • Access to comprehensive Opper documentation")
     print("   • Real-time information about Opper features")
     print("   • Examples and best practices")
