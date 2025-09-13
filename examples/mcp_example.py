@@ -9,7 +9,6 @@ agents with access to comprehensive Opper documentation and examples.
 import os
 import sys
 import asyncio
-from typing import List, Dict, Any
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -63,7 +62,7 @@ def demo_mcp_tools_basic():
         ]
 
         for goal in test_goals:
-            print(f"\n--- Testing Goal ---")
+            print("\n--- Testing Goal ---")
             print(f"Goal: {goal}")
 
             try:
@@ -106,12 +105,12 @@ def demo_mcp_decorator():
     try:
         agent = MCPAgent()
 
-        print(f"Created agent with MCP tools")
+        print("Created agent with MCP tools")
         print(f"   Available tools: {len(agent.get_tools())}")
 
         # Test the decorated agent
         goal = "What are the key concepts in Opper and how do they work together?"
-        print(f"\n--- Testing Decorated Agent ---")
+        print("\n--- Testing Decorated Agent ---")
         print(f"Goal: {goal}")
 
         try:
@@ -155,7 +154,7 @@ def demo_custom_mcp_server():
 
         # Test with Opper documentation queries
         goal = "Explain how to use datasets in Opper and provide an example"
-        print(f"\n--- Testing Custom MCP Server ---")
+        print("\n--- Testing Custom MCP Server ---")
         print(f"Goal: {goal}")
 
         try:

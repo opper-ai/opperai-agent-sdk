@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 from opperai import Opper
 import time
 import inspect
-from functools import wraps
 from .workflows import FinalizedWorkflow, InMemoryStorage
 import os
 
@@ -805,7 +804,7 @@ Be thorough in your reasoning and decisive in your action selection.""",
             )
 
             if self.verbose:
-                print(f"Flow completed successfully")
+                print("Flow completed successfully")
                 print(f"Result: {result}")
 
             return result
@@ -1016,7 +1015,7 @@ Be thorough in your reasoning and decisive in your action selection.""",
                     f"Warning: Reached maximum iterations ({self.max_iterations}) without achieving goal"
                 )
                 print(
-                    f"Consider increasing max_iterations or breaking down the goal into smaller steps"
+                    "Consider increasing max_iterations or breaking down the goal into smaller steps"
                 )
 
             # Handle both structured and unstructured results
@@ -1027,7 +1026,7 @@ Be thorough in your reasoning and decisive in your action selection.""",
                 print(f"Goal achieved: {goal_achieved}")
                 if not goal_achieved and iteration >= self.max_iterations:
                     print(
-                        f"Agent stopped due to iteration limit, goal may be partially complete"
+                        "Agent stopped due to iteration limit, goal may be partially complete"
                     )
                 print(f"📄 Structured result: {final_result}")
 
