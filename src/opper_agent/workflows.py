@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import time
 import uuid
+import copy
 from typing import (
     Any,
     Awaitable,
@@ -18,6 +19,7 @@ from typing import (
     Union,
     Generic,
     get_type_hints,
+    MutableMapping,
 )
 
 from pydantic import BaseModel
@@ -26,43 +28,124 @@ from pydantic import BaseModel
 I = TypeVar("I", bound=BaseModel)
 O = TypeVar("O", bound=BaseModel)
 
+# ---------------------------------------------
+# Reducers & State View
+# ---------------------------------------------
+Reducer = Callable[[Any, Any], Any]
 
+
+def _list_append(old: Any, new: Any) -> List[Any]:
+    return (old or []) + (new or [])
+
+
+def _dict_merge(old: Any, new: Any) -> Dict[str, Any]:
+    return {**(old or {}), **(new or {})}
+
+
+DEFAULT_REDUCERS: Dict[str, Reducer] = {
+    "messages": _list_append,
+    "logs": _list_append,
+    "tool_results": _dict_merge,
+    "artifacts": _dict_merge,
+}
+
+
+class StepStateView:
+    """Read-snapshot / write-staged state view exposed to a step.
+
+    - read() returns the immutable snapshot the step started with.
+    - update(...) stages partial updates to channels/keys.
+    - pending holds the accumulated staged patch for this step.
+    """
+
+    def __init__(self, snapshot: Dict[str, Any]):
+        self._snapshot = snapshot
+        self._pending: Dict[str, Any] = {}
+
+    def read(self) -> Dict[str, Any]:
+        return self._snapshot
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._snapshot.get(key, default)
+
+    def set(self, key: str, value: Any) -> None:
+        self._pending[key] = value
+
+    def update(self, patch: Dict[str, Any]) -> None:
+        self._pending.update(patch)
+
+    @property
+    def pending(self) -> Dict[str, Any]:
+        return self._pending
+
+
+class _RunContextProxy(MutableMapping[str, Any]):
+    """Back-compat proxy that maps dict-style access onto StepStateView.
+
+    Writing via __setitem__ stages updates on the state's pending patch.
+    Reading pulls from the read-only snapshot.
+    """
+
+    def __init__(self, state_view: StepStateView):
+        self._state = state_view
+
+    def __getitem__(self, k: str) -> Any:
+        return self._state.get(k)
+
+    def __setitem__(self, k: str, v: Any) -> None:
+        self._state.set(k, v)
+
+    def __delitem__(self, k: str) -> None:
+        # Deletion maps to setting None; customize if you want true delete semantics
+        self._state.set(k, None)
+
+    def __iter__(self):
+        return iter(self._state.read())
+
+    def __len__(self) -> int:
+        return len(self._state.read())
+
+
+# ---------------------------------------------
+# Contexts
+# ---------------------------------------------
 class ExecutionContext:
-    """Simplified execution context for the new data + context pattern."""
+    """Simplified execution context for the new state pattern."""
 
     def __init__(self, step_context):
-        """Initialize from a full StepContext."""
         self._step_context = step_context
 
     @property
-    def state(self) -> Dict[str, Any]:
-        """Access to step state."""
+    def state(self) -> StepStateView:
+        """Run-scoped state view (snapshot + staged updates)."""
         return self._step_context.state
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.state.get(key, default)
+
+    def set(self, key: str, value: Any) -> None:
+        self.state.set(key, value)
 
     @property
     def run_id(self) -> str:
-        """Workflow run ID."""
         return self._step_context.run_id
 
     @property
     def step_id(self) -> str:
-        """Current step ID."""
         return self._step_context.step_id
 
     @property
     def opper(self):
-        """Access to Opper client."""
         return self._step_context.opper
 
     @property
     def tools(self) -> Dict[str, Any]:
-        """Available tools."""
         return self._step_context.tools
 
     @property
     def memory(self) -> Any:
-        """Workflow memory."""
         return self._step_context.memory
+
 
     async def llm(
         self,
@@ -74,7 +157,6 @@ class ExecutionContext:
         input: Optional[BaseModel] = None,
         model: Optional[str] = None,
     ) -> BaseModel:
-        """Call AI model using opper.call syntax - delegates to full StepContext."""
         return await self._step_context.call_model(
             name=name,
             instructions=instructions,
@@ -85,7 +167,6 @@ class ExecutionContext:
         )
 
     def _emit_event(self, event_type: str, data: Dict[str, Any]) -> None:
-        """Emit event - delegates to full StepContext."""
         return self._step_context._emit_event(event_type, data)
 
 
@@ -108,7 +189,7 @@ class StepContext(Generic[I, O]):
         self,
         *,
         input_data: I,
-        state: Dict[str, Any],
+        state: StepStateView,
         run_id: str,
         step_id: str,
         opper,
@@ -134,7 +215,6 @@ class StepContext(Generic[I, O]):
         self.default_model = default_model
 
     def _emit_event(self, event_type: str, data: Dict[str, Any] = None):
-        """Emit an event if callback is available."""
         if self.event_callback:
             event_data = {
                 "run_id": self.run_id,
@@ -154,14 +234,7 @@ class StepContext(Generic[I, O]):
         input_obj: Optional[BaseModel] = None,
         model: Optional[str] = None,
     ) -> BaseModel:
-        """Helper for structured LLM calls via Opper using schemas.
-
-        Dynamic variables are passed through input, not interpolated into the prompt.
-        """
-        # Use provided model or fall back to default model
         effective_model = model or self.default_model
-
-        # Emit model call start event
         self._emit_event(
             "model_call_start",
             {
@@ -171,7 +244,6 @@ class StepContext(Generic[I, O]):
                 "output_schema": output_schema.__name__ if output_schema else None,
             },
         )
-
         try:
             result = self.opper.call(
                 name=name,
@@ -182,16 +254,11 @@ class StepContext(Generic[I, O]):
                 model=effective_model,
                 parent_span_id=self.parent_span_id,
             )
-
-            # Emit model call success event
             self._emit_event(
                 "model_call_success", {"call_name": name, "model": effective_model}
             )
-
-            return result.json_payload  # Expecting dict compatible with output_schema
-
-        except Exception as e:
-            # Emit model call error event
+            return result.json_payload
+        except Exception as e:  # noqa: BLE001
             self._emit_event(
                 "model_call_error",
                 {"call_name": name, "model": effective_model, "error": str(e)},
@@ -274,108 +341,60 @@ def step(
     """
     Decorator to convert a function into a Step.
 
-    Automatically extracts input and output models from function type hints.
     Supports two patterns:
-
-    1. Context-only (legacy): func(ctx: StepContext[InputModel, OutputModel]) -> OutputModel
-    2. Data + Context (preferred): func(data: InputModel, ctx: StepContext) -> OutputModel
-
-    Args:
-        func: The function to wrap (when used without parentheses)
-        id: Optional custom ID for the step (defaults to function name)
-        description: Optional custom description (defaults to function docstring)
-        retry: Optional retry configuration
-        timeout_ms: Optional timeout in milliseconds
-        on_error: Error handling strategy ("fail", "skip", or "continue")
-        map_in: Optional input transformation function
-        map_out: Optional output transformation function
-
-    Usage:
-        # Preferred: Data + Context pattern
-        @step
-        async def process_data(data: InputModel, ctx: StepContext) -> OutputModel:
-            \"\"\"Process some data.\"\"\"
-            result = await ctx.call_model(...)
-            return OutputModel(...)
-
-        # Legacy: Context-only pattern (still supported)
-        @step
-        async def process_data(ctx: StepContext[InputModel, OutputModel]) -> OutputModel:
-            data = ctx.input_data
-            return OutputModel(...)
+    1) Legacy: func(ctx: StepContext[I, O]) -> O
+    2) Preferred: func(data: I, ctx: ExecutionContext) -> O
     """
 
     def decorator(f: Callable) -> Step:
-        # Extract step ID
         step_id = id or f.__name__
-
-        # Extract description
         step_description = description or f.__doc__ or f"Execute {f.__name__}"
-
-        # Extract type hints and determine pattern
         try:
             type_hints = get_type_hints(f)
             sig = inspect.signature(f)
             params = list(sig.parameters.values())
-
             if not params:
                 raise ValueError(
                     f"Step function {f.__name__} must take at least one parameter"
                 )
-
-            # Get the return type (output model)
             return_type = type_hints.get("return")
             if not return_type:
                 raise ValueError(
                     f"Step function {f.__name__} must have a return type annotation"
                 )
 
-            # Determine pattern based on parameter count and types
             if len(params) == 1:
-                # Legacy pattern: func(ctx: StepContext[I, O]) -> O
+                # Legacy pattern
                 first_param = params[0]
                 if first_param.name != "ctx":
                     raise ValueError(
                         f"Step function {f.__name__} single parameter should be named 'ctx'"
                     )
-
-                # Extract input and output types from StepContext[I, O]
                 ctx_type = type_hints.get("ctx") or first_param.annotation
-
                 if hasattr(ctx_type, "__args__") and len(ctx_type.__args__) >= 2:
                     input_model = ctx_type.__args__[0]
                     output_model = ctx_type.__args__[1]
                 else:
-                    # Fallback: try to extract from return type
                     input_model = BaseModel
                     output_model = return_type
-
-                # Use original function as-is for legacy pattern
                 step_function = f
-
             elif len(params) == 2:
-                # New pattern: func(data: InputModel, ctx: StepContext) -> OutputModel
+                # Data + Context pattern
                 data_param = params[0]
                 ctx_param = params[1]
-
                 if ctx_param.name != "ctx":
                     raise ValueError(
                         f"Step function {f.__name__} second parameter should be named 'ctx'"
                     )
-
-                # Extract input model from first parameter
                 input_model = type_hints.get(data_param.name) or data_param.annotation
                 output_model = return_type
 
-                # Create wrapper function that adapts new pattern to legacy StepContext pattern
                 async def step_function(ctx):
                     return await f(ctx.input_data, ExecutionContext(ctx))
-
             else:
                 raise ValueError(
                     f"Step function {f.__name__} must take 1 or 2 parameters, got {len(params)}"
                 )
-
         except Exception as e:
             raise ValueError(
                 f"Could not extract type information from step function {f.__name__}: {e}"
@@ -394,14 +413,12 @@ def step(
             map_out=map_out,
         )
 
-    if func is None:
-        # Called with arguments: @step(id="something")
-        return decorator
-    else:
-        # Called without arguments: @step
-        return decorator(func)
+    return decorator if func is None else decorator(func)
 
 
+# ---------------------------------------------
+# Workflow types
+# ---------------------------------------------
 class Workflow(Generic[I, O]):
     def __init__(self, *, id: str, input_model: Type[I], output_model: Type[O]) -> None:
         self.id = id
@@ -482,6 +499,9 @@ def clone_workflow(
     return new
 
 
+# ---------------------------------------------
+# Storage
+# ---------------------------------------------
 class Storage:
     async def save(self, run_id: str, data: Any) -> None:
         raise NotImplementedError
@@ -501,6 +521,9 @@ class InMemoryStorage(Storage):
         return self._store.get(run_id)
 
 
+# ---------------------------------------------
+# Finalized workflow & run
+# ---------------------------------------------
 class FinalizedWorkflow(Generic[I, O]):
     def __init__(self, wf: Workflow[I, O]) -> None:
         self.id = wf.id
@@ -517,6 +540,7 @@ class FinalizedWorkflow(Generic[I, O]):
         memory: Any = None,
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
         default_model: Optional[str] = None,
+        reducers: Optional[Dict[str, Reducer]] = None,
     ) -> "WorkflowRun[I, O]":
         return WorkflowRun(
             self,
@@ -526,6 +550,7 @@ class FinalizedWorkflow(Generic[I, O]):
             memory=memory,
             event_callback=event_callback,
             default_model=default_model,
+            reducers=reducers or DEFAULT_REDUCERS,
         )
 
 
@@ -540,6 +565,9 @@ class WorkflowRun(Generic[I, O]):
         memory: Any,
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]],
         default_model: Optional[str] = None,
+        reducers: Dict[str, Reducer] = DEFAULT_REDUCERS,
+        _shared_state: Optional[Dict[str, Any]] = None,
+        _shared_lock: Optional[asyncio.Lock] = None,
     ) -> None:
         self.wf = wf
         self.opper = opper
@@ -551,8 +579,13 @@ class WorkflowRun(Generic[I, O]):
         self.run_id = str(uuid.uuid4())
         self.parent_span_id: Optional[str] = None
 
+        # Run-scoped canonical state and merge lock
+        self._state: Dict[str, Any] = _shared_state if _shared_state is not None else {}
+        self._reducers: Dict[str, Reducer] = reducers
+        self._state_lock: asyncio.Lock = _shared_lock or asyncio.Lock()
+
+    # ---- Events ----
     def _emit_event(self, event_type: str, data: Dict[str, Any] = None):
-        """Emit an event if callback is available."""
         if self.event_callback:
             event_data = {
                 "run_id": self.run_id,
@@ -562,8 +595,24 @@ class WorkflowRun(Generic[I, O]):
             }
             self.event_callback(event_type, event_data)
 
+    # ---- State merge ----
+    async def _merge_state(self, patch: Dict[str, Any]) -> None:
+        if not patch:
+            return
+        async with self._state_lock:
+            base = self._state
+            merged = dict(base)
+            for k, v in patch.items():
+                reducer = self._reducers.get(k)
+                if reducer:
+                    merged[k] = reducer(base.get(k), v)
+                else:
+                    # default: last-write-wins
+                    merged[k] = v
+            self._state = merged
+
+    # ---- Run start ----
     async def start(self, *, input_data: I) -> O:
-        # Emit workflow start event
         self._emit_event("workflow_start", {"input_data": _serialize_model(input_data)})
 
         # Create a run-level span; associate to parent if provided
@@ -578,6 +627,7 @@ class WorkflowRun(Generic[I, O]):
                 name=self.wf.id, input=_serialize_model(input_data)
             )
         self.parent_span_id = getattr(session_span, "id", None)
+
         out: Any = input_data
         try:
             for kind, payload in self.wf.pipeline:
@@ -629,12 +679,9 @@ class WorkflowRun(Generic[I, O]):
                     out = await asyncio.gather(*[_run_foreach(x) for x in src_iter])
                 await self._checkpoint(out)
 
-            # Emit workflow success event
             self._emit_event("workflow_success", {"output_data": _serialize_model(out)})
-
             return out  # type: ignore[return-value]
         except Exception as e:
-            # Emit workflow error event
             self._emit_event("workflow_error", {"error": str(e)})
             raise
         finally:
@@ -648,6 +695,7 @@ class WorkflowRun(Generic[I, O]):
 
     async def _exec_item(self, item: Any, input_obj: Any) -> Any:
         if isinstance(item, FinalizedWorkflow):
+            # Share state & lock with sub-run so state flows through nested workflows
             sub_run = WorkflowRun(
                 item,
                 opper=self.opper,
@@ -656,8 +704,10 @@ class WorkflowRun(Generic[I, O]):
                 memory=self.memory,
                 event_callback=self.event_callback,
                 default_model=self.default_model,
+                reducers=self._reducers,
+                _shared_state=self._state,
+                _shared_lock=self._state_lock,
             )
-            # Chain sub-run under the same parent run span
             sub_run.parent_span_id = self.parent_span_id
             return await sub_run.start(input_data=input_obj)
         if isinstance(item, Step):
@@ -672,16 +722,17 @@ class WorkflowRun(Generic[I, O]):
             payload = _serialize_model(input_obj)
             model_in = step.defn.input_model.model_validate(payload)
 
-        # Emit step start event
         self._emit_event(
             "step_start",
             {"step_id": step.defn.id, "input_data": _serialize_model(model_in)},
         )
 
-        # Do not create per-step spans; Opper calls will create their own child spans.
+        # Snapshot current state for this step and stage updates locally
+        state_view = StepStateView(snapshot=copy.deepcopy(self._state))
+
         ctx = StepContext(
             input_data=model_in,
-            state={},
+            state=state_view,
             run_id=self.run_id,
             step_id=step.defn.id,
             opper=self.opper,
@@ -707,7 +758,9 @@ class WorkflowRun(Generic[I, O]):
                     result = await step.defn.run(ctx)
                 out_obj = result
 
-                # Emit step success event
+                # Merge staged state updates using reducers
+                await self._merge_state(state_view.pending)
+
                 self._emit_event(
                     "step_success",
                     {"step_id": step.defn.id, "output_data": _serialize_model(result)},
@@ -715,8 +768,6 @@ class WorkflowRun(Generic[I, O]):
                 break
             except Exception as ex:  # noqa: BLE001
                 last_exc = ex
-
-                # Emit step retry event if not the last attempt
                 if i < attempts - 1:
                     self._emit_event(
                         "step_retry",
@@ -731,17 +782,10 @@ class WorkflowRun(Generic[I, O]):
                     if delay:
                         await asyncio.sleep(delay / 1000.0)
                     continue
-
-                # Emit step error event for final failure
                 self._emit_event(
                     "step_error",
-                    {
-                        "step_id": step.defn.id,
-                        "error": str(ex),
-                        "on_error": step.defn.on_error,
-                    },
+                    {"step_id": step.defn.id, "error": str(ex), "on_error": step.defn.on_error},
                 )
-
                 if step.defn.on_error == "fail":
                     raise
                 if step.defn.on_error in ("skip", "continue"):
@@ -761,6 +805,9 @@ class WorkflowRun(Generic[I, O]):
 
 
 __all__ = [
+    "Reducer",
+    "DEFAULT_REDUCERS",
+    "StepStateView",
     "StepContext",
     "ExecutionContext",
     "StepDef",
