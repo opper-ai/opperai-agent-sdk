@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "opper-agent-sdk"
 version = "0.1.0"
-description = "Opper-based agent workflows SDK (Mastra-style control flow)"
+description = "Opper-based agent workflows SDK"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
