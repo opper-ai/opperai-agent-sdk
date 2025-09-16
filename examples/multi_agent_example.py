@@ -1,0 +1,227 @@
+#!/usr/bin/env python3
+"""
+Multi-Agent System Example using agent.as_tool()
+
+This example demonstrates how to use agent.as_tool() to create a clean
+multi-agent system where agents can delegate tasks to each other.
+"""
+
+import os
+import sys
+import asyncio
+from typing import Any
+from pydantic import BaseModel, Field
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
+
+from opper_agent import Agent, tool, hook, RunContext
+
+
+# ============================================================================
+# Data Models
+# ============================================================================
+
+class TaskRequest(BaseModel):
+    """Request for task processing."""
+    task: str = Field(description="The task to be performed")
+    user_id: str = Field(description="ID of the user making the request")
+    priority: int = Field(default=1, description="Priority level (1-5, 5 being highest)")
+
+class TaskResponse(BaseModel):
+    """Response from task processing."""
+    task: str = Field(description="The original task")
+    agent_used: str = Field(description="Which agent handled the task")
+    result: str = Field(description="The result of the task")
+    success: bool = Field(description="Whether the task was completed successfully")
+
+
+# ============================================================================
+# Specialized Agents
+# ============================================================================
+
+# Math Agent
+@tool
+def calculate(expression: str) -> float:
+    """Calculate a mathematical expression safely."""
+    try:
+        allowed_chars = set('0123456789+-*/.() ')
+        if not all(c in allowed_chars for c in expression):
+            raise ValueError("Expression contains invalid characters")
+        return eval(expression)
+    except Exception as e:
+        raise ValueError(f"Calculation error: {e}")
+
+@tool
+def solve_equation(equation: str) -> str:
+    """Solve a simple algebraic equation."""
+    if "x" in equation:
+        return "x = 5 (simplified solution)"
+    return "No variable found in equation"
+
+math_agent = Agent(
+    name="MathAgent",
+    description="Handles mathematical calculations and problem solving",
+    tools=[calculate, solve_equation],
+    input_schema=TaskRequest,
+    output_schema=TaskResponse
+)
+
+# Swedish Agent
+@tool
+def translate_to_swedish(text: str) -> str:
+    """Translate English text to Swedish."""
+    translations = {
+        "hello": "hej", "goodbye": "hej då", "thank you": "tack",
+        "yes": "ja", "no": "nej", "please": "snälla"
+    }
+    
+    text_lower = text.lower()
+    for english, swedish in translations.items():
+        if english in text_lower:
+            text_lower = text_lower.replace(english, swedish)
+    return text_lower.title()
+
+@tool
+def swedish_grammar_check(text: str) -> str:
+    """Check Swedish grammar and provide corrections."""
+    if "är" in text.lower():
+        return f"Grammar check: '{text}' - looks good!"
+    return f"Grammar check: '{text}' - consider adding 'är' for proper Swedish"
+
+swedish_agent = Agent(
+    name="SwedishAgent", 
+    description="Handles Swedish language tasks, translation, and grammar",
+    tools=[translate_to_swedish, swedish_grammar_check],
+    input_schema=TaskRequest,
+    output_schema=TaskResponse
+)
+
+# Physics Agent
+@tool
+def calculate_force(mass: float, acceleration: float) -> float:
+    """Calculate force using F = ma."""
+    return mass * acceleration
+
+@tool
+def explain_physics_concept(concept: str) -> str:
+    """Explain a physics concept in simple terms."""
+    explanations = {
+        "velocity": "Velocity is how fast something is moving in a specific direction. It's speed with direction!",
+        "force": "Force is a push or pull that can make things move, stop, or change direction.",
+        "gravity": "Gravity is the invisible force that pulls things toward the Earth.",
+        "energy": "Energy is the ability to do work. It can be stored or moving."
+    }
+    
+    concept_lower = concept.lower()
+    for key, explanation in explanations.items():
+        if key in concept_lower:
+            return explanation
+    return f"Physics concept '{concept}': This is a fundamental concept in physics."
+
+physics_agent = Agent(
+    name="PhysicsAgent",
+    description="Handles physics calculations and explanations",
+    tools=[calculate_force, explain_physics_concept],
+    input_schema=TaskRequest,
+    output_schema=TaskResponse
+)
+
+
+# ============================================================================
+# Routing Assistant Agent using agent.as_tool()
+# ============================================================================
+
+# Event Hooks
+@hook("on_agent_start")
+async def on_routing_start(context: RunContext, agent: Agent):
+    print(f"🎯 Routing Assistant started - Task: {context.goal}")
+
+@hook("on_think_end")
+async def on_routing_think(context: RunContext, agent: Agent, thought: Any):
+    print(f"🤔 {thought.user_message}")
+
+# Create the routing assistant using agent.as_tool() with instructions
+routing_assistant = Agent(
+    name="RoutingAssistant",
+    description="Routes tasks to specialized agents (Math, Swedish, Physics)",
+    tools=[
+        math_agent.as_tool(
+            tool_name="delegate_to_math",
+            instructions="Always show your work step by step and explain your reasoning."
+        ),
+        swedish_agent.as_tool(
+            tool_name="delegate_to_swedish",
+            instructions="Provide both the Swedish translation and a brief explanation of the grammar."
+        ),
+        physics_agent.as_tool(
+            tool_name="delegate_to_physics",
+            instructions="Explain the concept in simple terms and provide a real-world example."
+        )
+    ],
+    hooks=[on_routing_start, on_routing_think],
+    input_schema=TaskRequest,
+    output_schema=TaskResponse,
+    verbose=False
+)
+
+
+# ============================================================================
+# Example Usage
+# ============================================================================
+
+async def main():
+    """Run the multi-agent system example."""
+    if not os.getenv("OPPER_API_KEY"):
+        print("❌ Set OPPER_API_KEY environment variable")
+        return
+
+    print("🤖 Multi-Agent System with agent.as_tool()")
+    print("=" * 50)
+    
+    # Example tasks
+    test_tasks = [
+        "Calculate 15 * 8 + 42",
+        "Translate 'hello' to Swedish", 
+        "Explain what velocity means in physics",
+        "Solve the equation 2x + 5 = 15",
+        "Check the Swedish grammar in 'Jag är glad'",
+        "Calculate the force if mass is 10kg and acceleration is 5m/s²"
+    ]
+    
+    print(f"🧪 Running {len(test_tasks)} test tasks...\n")
+    
+    # Process each task
+    for i, task in enumerate(test_tasks, 1):
+        print(f"\n--- Task {i} ---")
+        print(f"Task: {task}")
+        
+        try:
+            # Create task request
+            task_request = TaskRequest(
+                task=task,
+                user_id=f"user{i:03d}",
+                priority=1
+            )
+            
+            # Process through routing assistant
+            result = await routing_assistant.process(task_request)
+            
+            if hasattr(result, 'result'):
+                print(f"✅ Result: {result.result}")
+                print(f"   Agent: {result.agent_used}")
+            else:
+                print(f"✅ Result: {result}")
+                
+        except Exception as e:
+            print(f"❌ Error: {e}")
+    
+    print(f"\n🎉 Multi-agent system complete!")
+    print(f"\n💡 Key Benefits:")
+    print(f"   • Clean syntax: agent.as_tool()")
+    print(f"   • Automatic parameter extraction")
+    print(f"   • Proper async handling")
+    print(f"   • Easy multi-agent composition")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

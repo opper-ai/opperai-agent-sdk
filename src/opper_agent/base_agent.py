@@ -1093,6 +1093,103 @@ Be thorough in your reasoning and decisive in your action selection.""",
             name=name, input=str(input_data) if input_data else None
         )
 
+    def as_tool(self, tool_name: Optional[str] = None, description: Optional[str] = None, instructions: Optional[str] = None) -> FunctionTool:
+        """
+        Convert this agent into a tool that can be used by other agents.
+        
+        This allows agents to be used as tools in other agents' tool lists,
+        enabling multi-agent systems where agents can delegate tasks to each other.
+        
+        Args:
+            tool_name: Optional custom name for the tool (defaults to agent name)
+            description: Optional custom description for the tool (defaults to agent description)
+            instructions: Optional instructions to prepend to the agent's task (e.g., "Always show your work")
+            
+        Returns:
+            FunctionTool that can be added to another agent's tools list
+            
+        Example:
+            >>> math_agent = Agent(name="MathAgent", tools=[...])
+            >>> routing_agent = Agent(
+            ...     name="RoutingAgent", 
+            ...     tools=[math_agent.as_tool(instructions="Always show your work step by step")]
+            ... )
+        """
+        import asyncio
+        import concurrent.futures
+        import time
+        from typing import Any, Dict
+        
+        tool_name = tool_name or f"{self.name}_agent"
+        description = description or f"Delegate to {self.name}: {self.description}"
+        
+        def agent_tool(**kwargs) -> Any:
+            """Tool function that delegates to the agent."""
+            start_time = time.time()
+            
+            try:
+                # Create a task for the agent
+                async def call_agent():
+                    # Prepare the input data
+                    input_data = kwargs.copy()
+                    
+                    # If instructions are provided, prepend them to the task
+                    if instructions and 'task' in input_data:
+                        input_data['task'] = f"{instructions}\n\n{input_data['task']}"
+                    
+                    return await self.process(input_data)
+                
+                # Run the async call in a new event loop
+                def run_in_thread():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        return loop.run_until_complete(call_agent())
+                    finally:
+                        loop.close()
+                
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(run_in_thread)
+                    result = future.result(timeout=60)  # 60 second timeout
+                
+                return result
+                
+            except Exception as e:
+                return {
+                    "error": f"Agent {self.name} failed: {str(e)}",
+                    "success": False,
+                    "agent_used": self.name
+                }
+        
+        # Extract parameters from the agent's input schema for documentation
+        parameters = {}
+        if self.input_schema and hasattr(self.input_schema, 'model_fields'):
+            for field_name, field_info in self.input_schema.model_fields.items():
+                field_type = field_info.annotation
+                field_description = field_info.description or f"Parameter {field_name}"
+                
+                # Convert type to string for documentation
+                if hasattr(field_type, '__name__'):
+                    type_str = field_type.__name__
+                else:
+                    type_str = str(field_type)
+                
+                parameters[field_name] = f"{field_description} (Type: {type_str})"
+        else:
+            # Default parameter if no input schema
+            parameters = {
+                "task": "The task to be processed by this agent",
+                "user_id": "ID of the user making the request (optional)",
+                "priority": "Priority level 1-5 (optional, default: 1)"
+            }
+        
+        return FunctionTool(
+            func=agent_tool,
+            name=tool_name,
+            description=description,
+            parameters=parameters
+        )
+
     def __str__(self) -> str:
         """String representation of the agent."""
         return f"Agent(name='{self.name}', mode='tools', tools={len(self.tools)})"
