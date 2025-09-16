@@ -321,7 +321,7 @@ import asyncio
 from opper_agent import Agent, tool
 from pydantic import BaseModel, Field
 
-# Define specialized agents
+# Define specialized agents with instructions
 @tool
 def calculate(expression: str) -> float:
     """Calculate a mathematical expression."""
@@ -330,6 +330,7 @@ def calculate(expression: str) -> float:
 math_agent = Agent(
     name="MathAgent",
     description="Handles mathematical calculations",
+    instructions="Always show your work step by step and explain your reasoning.",
     tools=[calculate]
 )
 
@@ -341,6 +342,7 @@ def translate_to_swedish(text: str) -> str:
 swedish_agent = Agent(
     name="SwedishAgent", 
     description="Handles Swedish language tasks",
+    instructions="Provide both the Swedish translation and a brief explanation of the grammar.",
     tools=[translate_to_swedish]
 )
 
@@ -375,31 +377,48 @@ asyncio.run(main())
 - **Agent Hierarchies**: Agents can delegate to other agents that delegate to more agents
 - **Custom Tool Names**: `agent.as_tool(tool_name="custom_name")`
 - **Custom Descriptions**: `agent.as_tool(description="Custom description")`
-- **Custom Instructions**: `agent.as_tool(instructions="Always show your work step by step")`
+- **Agent Instructions**: Define instructions in the Agent constructor for consistent behavior
 - **Timeout Protection**: 60-second timeout prevents hanging operations
 - **Structured Responses**: Consistent response format across all agents
 
 ### Instructions Feature
 
-You can provide specific instructions to agents when using them as tools:
+You can provide specific instructions to agents in their constructor, which are automatically applied when the agent is used as a tool:
 
 ```python
 # Math agent with step-by-step instructions
-math_agent.as_tool(
-    tool_name="delegate_to_math",
-    instructions="Always show your work step by step and explain your reasoning."
+math_agent = Agent(
+    name="MathAgent",
+    description="Handles mathematical calculations",
+    instructions="Always show your work step by step and explain your reasoning.",
+    tools=[calculate]
 )
 
 # Swedish agent with grammar explanation instructions
-swedish_agent.as_tool(
-    tool_name="delegate_to_swedish", 
-    instructions="Provide both the Swedish translation and a brief explanation of the grammar."
+swedish_agent = Agent(
+    name="SwedishAgent", 
+    description="Handles Swedish language tasks",
+    instructions="Provide both the Swedish translation and a brief explanation of the grammar.",
+    tools=[translate_to_swedish]
 )
 
 # Physics agent with real-world examples
-physics_agent.as_tool(
-    tool_name="delegate_to_physics",
-    instructions="Explain the concept in simple terms and provide a real-world example."
+physics_agent = Agent(
+    name="PhysicsAgent",
+    description="Handles physics calculations and explanations",
+    instructions="Explain the concept in simple terms and provide a real-world example.",
+    tools=[calculate_force, explain_physics_concept]
+)
+
+# Use agents as tools - instructions are automatically applied
+routing_agent = Agent(
+    name="RoutingAgent",
+    description="Routes tasks to specialized agents",
+    tools=[
+        math_agent.as_tool(tool_name="delegate_to_math"),
+        swedish_agent.as_tool(tool_name="delegate_to_swedish"),
+        physics_agent.as_tool(tool_name="delegate_to_physics")
+    ]
 )
 ```
 

@@ -353,6 +353,7 @@ class Agent:
         verbose: bool = False,
         tools: Optional[List[Tool]] = None,
         description: Optional[str] = None,
+        instructions: Optional[str] = None,
         callback: Optional[callable] = None,
         model: Optional[str] = None,
         input_schema: Optional[type] = None,
@@ -369,6 +370,7 @@ class Agent:
             verbose: Whether to print detailed execution logs
             tools: Optional list of tools (if provided, get_tools() doesn't need to be implemented)
             description: Optional description (if provided, get_agent_description() doesn't need to be implemented)
+            instructions: Optional instructions for how this agent should behave when used as a tool
             callback: Optional callback function to receive status updates (event_type, data)
             model: Optional default model to use for all LLM calls
             input_schema: Optional Pydantic model for input validation (defaults to str)
@@ -388,6 +390,7 @@ class Agent:
         self.verbose = verbose
         self.input_schema = input_schema or None
         self.output_schema = output_schema or None
+        self.instructions = instructions
         self.callback = callback
         self.model = model
 
@@ -1093,7 +1096,7 @@ Be thorough in your reasoning and decisive in your action selection.""",
             name=name, input=str(input_data) if input_data else None
         )
 
-    def as_tool(self, tool_name: Optional[str] = None, description: Optional[str] = None, instructions: Optional[str] = None) -> FunctionTool:
+    def as_tool(self, tool_name: Optional[str] = None, description: Optional[str] = None) -> FunctionTool:
         """
         Convert this agent into a tool that can be used by other agents.
         
@@ -1103,16 +1106,15 @@ Be thorough in your reasoning and decisive in your action selection.""",
         Args:
             tool_name: Optional custom name for the tool (defaults to agent name)
             description: Optional custom description for the tool (defaults to agent description)
-            instructions: Optional instructions to prepend to the agent's task (e.g., "Always show your work")
             
         Returns:
             FunctionTool that can be added to another agent's tools list
             
         Example:
-            >>> math_agent = Agent(name="MathAgent", tools=[...])
+            >>> math_agent = Agent(name="MathAgent", instructions="Always show your work step by step", tools=[...])
             >>> routing_agent = Agent(
             ...     name="RoutingAgent", 
-            ...     tools=[math_agent.as_tool(instructions="Always show your work step by step")]
+            ...     tools=[math_agent.as_tool()]
             ... )
         """
         import asyncio
@@ -1123,7 +1125,7 @@ Be thorough in your reasoning and decisive in your action selection.""",
         tool_name = tool_name or f"{self.name}_agent"
         description = description or f"Delegate to {self.name}: {self.description}"
         
-        def agent_tool(**kwargs) -> Any:
+        def agent_tool(task: str, **kwargs) -> Any:
             """Tool function that delegates to the agent."""
             start_time = time.time()
             
@@ -1131,11 +1133,11 @@ Be thorough in your reasoning and decisive in your action selection.""",
                 # Create a task for the agent
                 async def call_agent():
                     # Prepare the input data
-                    input_data = kwargs.copy()
+                    input_data = {"task": task, **kwargs}
                     
-                    # If instructions are provided, prepend them to the task
-                    if instructions and 'task' in input_data:
-                        input_data['task'] = f"{instructions}\n\n{input_data['task']}"
+                    # If agent has instructions, prepend them to the task
+                    if self.instructions:
+                        input_data["task"] = f"{self.instructions}\n\n{task}"
                     
                     return await self.process(input_data)
                 
@@ -1152,7 +1154,17 @@ Be thorough in your reasoning and decisive in your action selection.""",
                     future = executor.submit(run_in_thread)
                     result = future.result(timeout=60)  # 60 second timeout
                 
-                return result
+                # Ensure the result is in the expected format
+                if isinstance(result, dict):
+                    # If it's a dict, return it as-is (it should have the right structure)
+                    return result
+                else:
+                    # If it's a string or other type, wrap it in the expected format
+                    return {
+                        "message": str(result),
+                        "success": True,
+                        "agent_used": self.name
+                    }
                 
             except Exception as e:
                 return {
@@ -1161,27 +1173,31 @@ Be thorough in your reasoning and decisive in your action selection.""",
                     "agent_used": self.name
                 }
         
-        # Extract parameters from the agent's input schema for documentation
-        parameters = {}
+        # Create delegation parameters for the tool
+        parameters = {
+            "task": f"The task to be processed by {self.name}",
+        }
+        
+        # Add additional parameters from the agent's input schema if available
         if self.input_schema and hasattr(self.input_schema, 'model_fields'):
             for field_name, field_info in self.input_schema.model_fields.items():
-                field_type = field_info.annotation
-                field_description = field_info.description or f"Parameter {field_name}"
-                
-                # Convert type to string for documentation
-                if hasattr(field_type, '__name__'):
-                    type_str = field_type.__name__
-                else:
-                    type_str = str(field_type)
-                
-                parameters[field_name] = f"{field_description} (Type: {type_str})"
-        else:
-            # Default parameter if no input schema
-            parameters = {
-                "task": "The task to be processed by this agent",
-                "user_id": "ID of the user making the request (optional)",
-                "priority": "Priority level 1-5 (optional, default: 1)"
-            }
+                if field_name != "task":  # Skip task as it's already defined
+                    field_type = field_info.annotation
+                    field_description = field_info.description or f"Parameter {field_name}"
+                    
+                    # Convert type to string for documentation
+                    if hasattr(field_type, '__name__'):
+                        type_str = field_type.__name__
+                    else:
+                        type_str = str(field_type)
+                    
+                    parameters[field_name] = f"{field_description} (Type: {type_str})"
+        
+        # Add common delegation parameters
+        parameters.update({
+            "user_id": "ID of the user making the request (optional)",
+            "priority": "Priority level 1-5 (optional, default: 1)"
+        })
         
         return FunctionTool(
             func=agent_tool,

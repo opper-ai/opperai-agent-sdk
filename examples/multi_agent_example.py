@@ -21,18 +21,13 @@ from opper_agent import Agent, tool, hook, RunContext
 # Data Models
 # ============================================================================
 
-class TaskRequest(BaseModel):
+class Request(BaseModel):
     """Request for task processing."""
-    task: str = Field(description="The task to be performed")
-    user_id: str = Field(description="ID of the user making the request")
-    priority: int = Field(default=1, description="Priority level (1-5, 5 being highest)")
+    message: str = Field(description="The task to be performed")
 
-class TaskResponse(BaseModel):
+class Response(BaseModel):
     """Response from task processing."""
-    task: str = Field(description="The original task")
-    agent_used: str = Field(description="Which agent handled the task")
-    result: str = Field(description="The result of the task")
-    success: bool = Field(description="Whether the task was completed successfully")
+    message: str = Field(description="The response or result of the task")
 
 
 # ============================================================================
@@ -61,9 +56,10 @@ def solve_equation(equation: str) -> str:
 math_agent = Agent(
     name="MathAgent",
     description="Handles mathematical calculations and problem solving",
+    instructions="Always show your work step by step and explain your reasoning.",
     tools=[calculate, solve_equation],
-    input_schema=TaskRequest,
-    output_schema=TaskResponse
+    input_schema=Request,
+    output_schema=Response
 )
 
 # Swedish Agent
@@ -91,9 +87,10 @@ def swedish_grammar_check(text: str) -> str:
 swedish_agent = Agent(
     name="SwedishAgent", 
     description="Handles Swedish language tasks, translation, and grammar",
+    instructions="Provide both the Swedish translation and a brief explanation of the grammar.",
     tools=[translate_to_swedish, swedish_grammar_check],
-    input_schema=TaskRequest,
-    output_schema=TaskResponse
+    input_schema=Request,
+    output_schema=Response
 )
 
 # Physics Agent
@@ -121,9 +118,10 @@ def explain_physics_concept(concept: str) -> str:
 physics_agent = Agent(
     name="PhysicsAgent",
     description="Handles physics calculations and explanations",
+    instructions="Explain the concept in simple terms and provide a real-world example.",
     tools=[calculate_force, explain_physics_concept],
-    input_schema=TaskRequest,
-    output_schema=TaskResponse
+    input_schema=Request,
+    output_schema=Response
 )
 
 
@@ -140,27 +138,19 @@ async def on_routing_start(context: RunContext, agent: Agent):
 async def on_routing_think(context: RunContext, agent: Agent, thought: Any):
     print(f"🤔 {thought.user_message}")
 
-# Create the routing assistant using agent.as_tool() with instructions
+# Create the routing assistant using agent.as_tool()
 routing_assistant = Agent(
     name="RoutingAssistant",
     description="Routes tasks to specialized agents (Math, Swedish, Physics)",
+    instructions="Given a user message or task, respond or use subagents to handle the task.",
     tools=[
-        math_agent.as_tool(
-            tool_name="delegate_to_math",
-            instructions="Always show your work step by step and explain your reasoning."
-        ),
-        swedish_agent.as_tool(
-            tool_name="delegate_to_swedish",
-            instructions="Provide both the Swedish translation and a brief explanation of the grammar."
-        ),
-        physics_agent.as_tool(
-            tool_name="delegate_to_physics",
-            instructions="Explain the concept in simple terms and provide a real-world example."
-        )
+        math_agent.as_tool(tool_name="delegate_to_math"),
+        swedish_agent.as_tool(tool_name="delegate_to_swedish"),
+        physics_agent.as_tool(tool_name="delegate_to_physics")
     ],
     hooks=[on_routing_start, on_routing_think],
-    input_schema=TaskRequest,
-    output_schema=TaskResponse,
+    input_schema=Request,
+    output_schema=Response,
     verbose=False
 )
 
@@ -180,6 +170,7 @@ async def main():
     
     # Example tasks
     test_tasks = [
+        "Hello, how are you?",
         "Calculate 15 * 8 + 42",
         "Translate 'hello' to Swedish", 
         "Explain what velocity means in physics",
@@ -197,18 +188,21 @@ async def main():
         
         try:
             # Create task request
-            task_request = TaskRequest(
-                task=task,
-                user_id=f"user{i:03d}",
-                priority=1
+            task_request = Request(
+                message=task
             )
             
             # Process through routing assistant
             result = await routing_assistant.process(task_request)
             
-            if hasattr(result, 'result'):
-                print(f"✅ Result: {result.result}")
-                print(f"   Agent: {result.agent_used}")
+            # Handle both dict and Pydantic model results
+            if isinstance(result, dict):
+                if 'message' in result:
+                    print(f"✅ Result: {result['message']}")
+                else:
+                    print(f"✅ Result: {result}")
+            elif hasattr(result, 'message'):
+                print(f"✅ Result: {result.message}")
             else:
                 print(f"✅ Result: {result}")
                 
