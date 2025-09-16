@@ -239,6 +239,57 @@ asyncio.run(main())
 
 **Note:** The Opper docs MCP server is currently experiencing issues. Use other MCP servers or direct API integration for production use.
 
+### MCPToolManager for Advanced Usage
+
+For better connection management and multiple MCP servers:
+
+```python
+import asyncio
+from opper_agent import Agent
+from opper_agent.mcp import MCPServerConfig, MCPToolManager
+
+async def main():
+    # Create MCP tool manager
+    mcp_manager = MCPToolManager()
+    
+    # Add multiple MCP servers
+    gmail_server = MCPServerConfig(
+        name="gmail",
+        url="https://mcp.composio.dev/partner/composio/gmail/mcp",
+        transport="http-sse"
+    )
+    
+    filesystem_server = MCPServerConfig(
+        name="filesystem",
+        command="npx",
+        args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+    )
+    
+    mcp_manager.add_server(gmail_server)
+    mcp_manager.add_server(filesystem_server)
+    
+    try:
+        # Connect to all servers
+        await mcp_manager.connect_all()
+        tools = mcp_manager.get_all_tools()
+        
+        # Create agent with all MCP tools
+        agent = Agent(
+            name="MultiMCPAgent",
+            description="Agent with access to multiple MCP servers",
+            tools=tools
+        )
+        
+        result = await agent.process("Your goal here")
+        print(result)
+        
+    finally:
+        # Properly cleanup connections
+        await mcp_manager.disconnect_all()
+
+asyncio.run(main())
+```
+
 ### Custom MCP Servers
 
 ```python

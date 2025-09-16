@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from opper_agent import Agent, hook, RunContext, create_mcp_tools_async
-from opper_agent.mcp import MCPServerConfig
+from opper_agent.mcp import MCPServerConfig, MCPToolManager
 
 
 class GmailResults(BaseModel):
@@ -49,32 +49,44 @@ async def main():
         enabled=True
     )
     
-    # Create MCP tools
-    print("📡 Creating MCP tools...")
-    tools = await create_mcp_tools_async([gmail_server])
-    print(f"✅ Created {len(tools)} MCP tools")
-    
-    # Create agent with MCP tools
-    agent = Agent(
-        name="GmailAgent",
-        description="Gmail agent with MCP integration for reading and managing emails",
-        tools=tools,
-        hooks=[on_think_end],
-        output_schema=GmailResults,
-        #verbose=True
-    )
-    
-    # Example: List recent unread emails
-    goal = "List my last 5 unread emails and show their subjects and senders."
-    print(f"\n🎯 Goal: {goal}")
-    print("🚀 Running Gmail Agent...")
+    # Create MCP tool manager for proper connection management
+    mcp_manager = MCPToolManager()
+    mcp_manager.add_server(gmail_server)
     
     try:
-        result = await agent.process(goal)
-        print(f"✅ Result: {result}")
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        print("💡 This might be due to network issues or authentication problems")
+        # Create MCP tools with proper connection management
+        print("📡 Creating MCP tools...")
+        await mcp_manager.connect_all()
+        tools = mcp_manager.get_all_tools()
+        print(f"✅ Created {len(tools)} MCP tools")
+        
+        # Create agent with MCP tools
+        agent = Agent(
+            name="GmailAgent",
+            description="Gmail agent with MCP integration for reading and managing emails",
+            tools=tools,
+            hooks=[on_think_end],
+            output_schema=GmailResults,
+            #verbose=True
+        )
+        
+        # Example: List recent unread emails
+        goal = "List my last 5 unread emails and show their subjects and senders."
+        print(f"\n🎯 Goal: {goal}")
+        print("🚀 Running Gmail Agent...")
+        
+        try:
+            result = await agent.process(goal)
+            print(f"✅ Result: {result}")
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            print("💡 This might be due to network issues or authentication problems")
+    
+    finally:
+        # Properly disconnect from all MCP servers
+        print("\n🔌 Cleaning up MCP connections...")
+        await mcp_manager.disconnect_all()
+        print("✅ MCP connections cleaned up")
 
 
 if __name__ == "__main__":

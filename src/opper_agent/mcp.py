@@ -442,10 +442,16 @@ class MCPHTTPClient:
     async def disconnect(self) -> None:
         """Disconnect from the HTTP MCP server."""
         if self._session:
-            await self._session.close()
-            self._session = None
-            self._connected = False
-            logger.info("Disconnected from HTTP MCP server")
+            try:
+                await self._session.close()
+                # Wait a bit for connections to close properly
+                await asyncio.sleep(0.1)
+            except Exception as e:
+                logger.warning(f"Error closing HTTP session: {e}")
+            finally:
+                self._session = None
+                self._connected = False
+                logger.info("Disconnected from HTTP MCP server")
     
     async def _initialize(self) -> None:
         """Initialize the HTTP MCP connection."""
@@ -777,10 +783,16 @@ class MCPToolAdapter:
     async def disconnect(self) -> None:
         """Disconnect from the MCP server."""
         if self.client:
-            await self.client.disconnect()
-            self.client = None
-            self._connected = False
-            self._tools_cache.clear()
+            try:
+                await self.client.disconnect()
+            except Exception as e:
+                logger.warning(f"Error disconnecting MCP client for '{self.server_config.name}': {e}")
+            finally:
+                self.client = None
+                self._connected = False
+                self._tools_cache.clear()
+                # Give a moment for connections to close
+                await asyncio.sleep(0.1)
     
     async def _load_tools(self) -> None:
         """Load MCP tools and convert them to Opper Agent tools."""
@@ -815,13 +827,33 @@ class MCPToolAdapter:
                     client = self.server_config.create_client()
                     try:
                         await client.connect()
-                        # MCP tools expect parameters to be wrapped in a 'params' object
-                        result = await client.call_tool(
-                            mcp_tool.name, {"params": validated_input.model_dump()}
-                        )
+                        # Handle parameters based on the model structure
+                        input_data = validated_input.model_dump()
+                        
+                        # If the model has a 'params' field, extract it
+                        if 'params' in input_data and isinstance(input_data['params'], dict):
+                            params = input_data['params']
+                        else:
+                            # If no params field, wrap the input data in params
+                            params = {"params": input_data}
+                        
+                        logger.debug(f"Calling MCP tool '{mcp_tool.name}' with parameters: {params}")
+                        result = await client.call_tool(mcp_tool.name, params)
+                        logger.debug(f"MCP tool '{mcp_tool.name}' returned: {result}")
                         return result
                     finally:
-                        await client.disconnect()
+                        try:
+                            await client.disconnect()
+                        except Exception as e:
+                            logger.warning(f"Error disconnecting MCP client: {e}")
+                        # Force cleanup of any remaining connections
+                        if hasattr(client, '_session') and client._session:
+                            try:
+                                await client._session.close()
+                                # Wait a bit for connections to close
+                                await asyncio.sleep(0.1)
+                            except Exception:
+                                pass
                 
                 # Check if we're in an event loop
                 try:
@@ -842,7 +874,13 @@ class MCPToolAdapter:
                 return result
                 
             except Exception as e:
-                logger.error(f"MCP tool '{mcp_tool.name}' execution failed: {e}")
+                error_msg = f"MCP tool '{mcp_tool.name}' execution failed: {e}"
+                logger.error(error_msg)
+                # Add more detailed error information
+                if "The request is invalid" in str(e):
+                    logger.error(f"This might be due to incorrect parameter format or missing authentication for tool '{mcp_tool.name}'")
+                elif "Unclosed client session" in str(e):
+                    logger.warning("HTTP session cleanup issue detected - this is usually not critical")
                 raise MCPError(f"Tool execution failed: {e}")
         
         # Create FunctionTool instance
@@ -881,6 +919,36 @@ class MCPToolAdapter:
                     Optional[field_type],
                     Field(default=None, description=field_description),
                 )
+        
+        # Special handling for MCP tools that expect a 'params' field
+        # If the schema has a 'params' field, we need to create a wrapper model
+        if "params" in properties:
+            # Create a wrapper model that contains the params
+            params_schema = properties["params"]
+            if params_schema.get("type") == "object" and "properties" in params_schema:
+                # Create the inner params model
+                inner_fields = {}
+                inner_properties = params_schema["properties"]
+                inner_required = set(params_schema.get("required", []))
+                
+                for inner_field_name, inner_field_schema in inner_properties.items():
+                    inner_field_type = self._json_schema_to_python_type(inner_field_schema)
+                    inner_field_description = inner_field_schema.get("description", "")
+                    
+                    if inner_field_name in inner_required:
+                        inner_fields[inner_field_name] = (inner_field_type, Field(description=inner_field_description))
+                    else:
+                        inner_fields[inner_field_name] = (
+                            Optional[inner_field_type],
+                            Field(default=None, description=inner_field_description),
+                        )
+                
+                # Create the inner model
+                inner_model = create_model(f"{model_name}Params", **inner_fields)
+                
+                # Create the wrapper model with params field
+                wrapper_fields = {"params": (inner_model, Field(description="Tool parameters"))}
+                return create_model(model_name, **wrapper_fields)
         
         return create_model(model_name, **fields)
     
@@ -1064,10 +1132,19 @@ class MCPToolManager:
             tasks.append(adapter.disconnect())
         
         # Disconnect from all servers concurrently
-        await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Log any disconnection failures
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                server_name = list(self.adapters.keys())[i]
+                logger.warning(f"Failed to disconnect from MCP server '{server_name}': {result}")
         
         # Clear tools cache
         self._all_tools.clear()
+        
+        # Give a moment for all connections to close
+        await asyncio.sleep(0.1)
     
     async def __aenter__(self):
         """Async context manager entry."""

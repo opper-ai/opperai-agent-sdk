@@ -18,7 +18,7 @@ from opper_agent import Agent, tool, hook, RunContext, Usage
 # --- Input/Output Schemas ---
 class MathProblem(BaseModel):
     problem: str = Field(description="The math problem to solve")
-    show_work: bool = Field(default=True, description="Whether to show step-by-step work")
+    show_work: bool = Field(default=False, description="Whether to show step-by-step work")
 
 class MathSolution(BaseModel):
     problem: str = Field(description="The original problem")
@@ -84,6 +84,7 @@ async def main():
         tools=[add_numbers, subtract_numbers, multiply_numbers, divide_numbers, calculate_power, calculate_square_root],
         input_schema=MathProblem,
         output_schema=MathSolution,
+        model="groq/gpt-oss-120b",
         verbose=False,
         hooks=[
             on_agent_start,
