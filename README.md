@@ -400,10 +400,6 @@ The agent provides comprehensive observability for production deployments:
 
 View your traces in the [Opper Dashboard](https://platform.opper.ai) 
 
-## Contributing
-
-Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
