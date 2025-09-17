@@ -583,6 +583,7 @@ class Agent:
             "goal": goal,
             "agent_description": self.description,
             "agent_mode": self.mode,
+            "agent_instructions": self.instructions or "No specific instructions provided.",
             "available_tools": [
                 {
                     "name": tool.name,
@@ -600,9 +601,8 @@ class Agent:
             "iterations_remaining": self.max_iterations - current_iteration,
         }
 
-        think_call = await self.call_llm(
-            name="think",
-            instructions=f"""You are implementing the THINK step in a Think -> Act reasoning loop.
+        # Build the call instructions that reference the context
+        instructions = f"""You are implementing the THINK step in a Think -> Act reasoning loop.
 
 YOUR RESPONSIBILITIES:
 1. ANALYZE the current situation toward achieving the goal
@@ -638,7 +638,14 @@ If goal_achieved is False, then:
 - Set tool_name to 'direct_response' only if no tool makes sense AND you can complete the goal without tools
 - Set tool_name to 'none' if goal is achieved
 
-Be thorough in your reasoning and decisive in your action selection.""",
+AGENT BEHAVIOR:
+Follow the agent_instructions provided in the context object to guide your reasoning and action selection.
+
+Be thorough in your reasoning and decisive in your action selection."""
+
+        think_call = await self.call_llm(
+            name="think",
+            instructions=instructions,
             input_data=context,
             output_schema=Thought,
             model=self.model,
@@ -780,13 +787,19 @@ Be thorough in your reasoning and decisive in your action selection.""",
             "goal": goal,
             "execution_history": execution_history,
             "agent_description": self.description,
+            "agent_instructions": self.instructions or "No specific instructions provided.",
             "goal_achieved": self.is_goal_achieved(goal, execution_history),
             "iterations": len(execution_history),
         }
 
+        # Build instructions for final result generation that reference context
+        final_instructions = """Given the goal and the information collected in execution_history generate a final result according to the output schema.
+
+Follow the agent_instructions provided in the context object to guide how you format and present the final result."""
+
         result_call = await self.call_llm(
             name="generate_final_result",
-            instructions="Given the goal and the infomration collectected in execution_history generate a final result according to the output schema.",
+            instructions=final_instructions,
             input_data=context,
             output_schema=self.output_schema,
             model=self.model,
@@ -949,10 +962,8 @@ Be thorough in your reasoning and decisive in your action selection.""",
             )
         
         try:
-            # Use LLM to clean the tool result
-            clean_call = await self.call_llm(
-                name="clean_tool_result",
-                instructions=f"""You are tasked with cleaning a tool result to remove unnecessary information.
+            # Build instructions for tool result cleaning that reference context
+            clean_instructions = f"""You are tasked with cleaning a tool result to remove unnecessary information.
 
 CONTEXT:
 - Tool: {tool_name}
@@ -970,11 +981,20 @@ GUIDELINES:
 - If the result is already clean and relevant, return it as-is
 - Be conservative - only remove clearly unnecessary information
 
-Return the cleaned result directly without any additional commentary or explanation.""",
+AGENT BEHAVIOR:
+Follow the agent_instructions provided in the context object to determine what information is relevant and should be kept in the cleaned result.
+
+Return the cleaned result directly without any additional commentary or explanation."""
+
+            # Use LLM to clean the tool result
+            clean_call = await self.call_llm(
+                name="clean_tool_result",
+                instructions=clean_instructions,
                 input_data={
                     "tool_name": tool_name,
                     "goal": goal,
-                    "original_result": tool_result
+                    "original_result": tool_result,
+                    "agent_instructions": self.instructions or "No specific instructions provided."
                 },
                 model=self.model,
                 parent_span_id=clean_span.id if clean_span else None,
