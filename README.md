@@ -4,13 +4,14 @@ A Python SDK for building AI agents with [Opper Task Completion API](https://opp
 
 ## Features
 
-- **Tools-Based Reasoning**: Think → Act reasoning loop with dynamic tool selection
-- **Real-time Events**: Event system for UI progress tracking
+- **Reasoning with customizable model**: Think → Act reasoning loop with dynamic tool selection
+- **Extendable tool support**: Support for MCP or custom tools
+- **Event Hooks**: Flexible hook system for accessing any internal Agent event
+- **Composable interface**: Agent supports structured input and output schema for ease of integration
+- **Multi-agent support**: Agents can be used as tools for other agents to allow for delegation
+- **Type Safety internals**: Pydantic model validation throughout execution
 - **Error Handling**: Robust error handling with retry mechanisms
 - **Tracing & Monitoring**: Full observability with Opper's tracing system
-- **Type Safety**: Pydantic model validation throughout execution
-- **MCP Integration**: Connect to external tools via Model Context Protocol
-- **Event Hooks**: Flexible hook system for monitoring agent behavior
 
 ## Agent Architecture
 
@@ -28,15 +29,8 @@ agent = Agent(
     name="ReasoningAgent",
     description="Solves problems through iterative thinking",
     tools=[calculate_area], 
-    callback=event_handler  # Optional real-time events
 )
 ```
-
-**Key Features:**
-- **Dynamic Tool Selection**: AI-driven, contextual tool usage
-- **Flexible Reasoning**: High adaptability for complex problems
-- **Think → Act Loop**: Iterative problem-solving approach
-- **Built-in Error Handling**: Automatic retry logic and fallback strategies
 
 ## Installation
 
@@ -140,12 +134,13 @@ def divide_numbers(a: float, b: float) -> float:
         raise ValueError("Cannot divide by zero")
     return a / b
 
-# Define event hooks
+# Event hook to log agent startup
 @hook("on_agent_start")
 async def on_agent_start(context: RunContext, agent: Agent):
     print(f"🧮 Math Agent started")
     print(f"   Problem: {context.goal}")
 
+# Event hook to log agent actions
 @hook("on_think_end")
 async def on_think_end(context: RunContext, agent: Agent, thought: Any):
     """Post-thinking hook to analyze the agent's reasoning."""
@@ -174,12 +169,6 @@ async def main():
 asyncio.run(main())
 ```
 
-**Key Features Demonstrated:**
-- **Structured Input/Output**: Pydantic models for type-safe data handling
-- **Event Hooks**: Real-time monitoring of agent behavior
-- **Tool Integration**: Multiple arithmetic tools with error handling
-- **Async Processing**: Full async/await support for modern Python
-
 ## Model Selection
 
 You can specify AI models at the **agent level** to control which model is used for reasoning. The SDK supports all models available through the Opper API:
@@ -190,7 +179,7 @@ agent = Agent(
     name="ClaudeAgent",
     description="An agent that uses Claude for reasoning",
     tools=[my_tools],
-    model="anthropic/claude-3.5-sonnet"  # Model for reasoning and tool selection
+    model="anthropic/claude-4-sonnet"  # Model for reasoning and tool selection
 )
 
 # Or use a different model
@@ -236,8 +225,6 @@ async def main():
 
 asyncio.run(main())
 ```
-
-**Note:** The Opper docs MCP server is currently experiencing issues. Use other MCP servers or direct API integration for production use.
 
 ### MCPToolManager for Advanced Usage
 
@@ -364,15 +351,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### Key Benefits
-
-✅ **Clean Syntax**: `agent.as_tool()` - intuitive and readable
-✅ **Automatic Parameter Extraction**: Uses input schemas for tool documentation  
-✅ **Proper Async Handling**: Thread-safe execution with timeout protection
-✅ **Error Handling**: Structured error responses and fallback mechanisms
-✅ **Easy Composition**: Build complex multi-agent hierarchies
-
-### Advanced Multi-Agent Features
+### Additional multi-Agent Features
 
 - **Agent Hierarchies**: Agents can delegate to other agents that delegate to more agents
 - **Custom Tool Names**: `agent.as_tool(tool_name="custom_name")`
@@ -380,47 +359,6 @@ asyncio.run(main())
 - **Agent Instructions**: Define instructions in the Agent constructor for consistent behavior
 - **Timeout Protection**: 60-second timeout prevents hanging operations
 - **Structured Responses**: Consistent response format across all agents
-
-### Instructions Feature
-
-You can provide specific instructions to agents in their constructor, which are automatically applied when the agent is used as a tool:
-
-```python
-# Math agent with step-by-step instructions
-math_agent = Agent(
-    name="MathAgent",
-    description="Handles mathematical calculations",
-    instructions="Always show your work step by step and explain your reasoning.",
-    tools=[calculate]
-)
-
-# Swedish agent with grammar explanation instructions
-swedish_agent = Agent(
-    name="SwedishAgent", 
-    description="Handles Swedish language tasks",
-    instructions="Provide both the Swedish translation and a brief explanation of the grammar.",
-    tools=[translate_to_swedish]
-)
-
-# Physics agent with real-world examples
-physics_agent = Agent(
-    name="PhysicsAgent",
-    description="Handles physics calculations and explanations",
-    instructions="Explain the concept in simple terms and provide a real-world example.",
-    tools=[calculate_force, explain_physics_concept]
-)
-
-# Use agents as tools - instructions are automatically applied
-routing_agent = Agent(
-    name="RoutingAgent",
-    description="Routes tasks to specialized agents",
-    tools=[
-        math_agent.as_tool(tool_name="delegate_to_math"),
-        swedish_agent.as_tool(tool_name="delegate_to_swedish"),
-        physics_agent.as_tool(tool_name="delegate_to_physics")
-    ]
-)
-```
 
 The instructions are automatically prepended to the task when delegating, ensuring consistent behavior across your multi-agent system.
 
@@ -446,7 +384,7 @@ python examples/opper_docs_example.py
 export OPPER_API_KEY="your-api-key"
 ```
 
-**Featured Example:** The math agent example demonstrates the core features of the SDK including structured input/output, event hooks, tool integration, and async processing.
+## Available Hooks
 
 Available hook methods: `on_agent_start`, `on_agent_end`, `on_agent_error`, `on_iteration_start`, `on_iteration_end`, `on_think_start`, `on_think_end`, `on_tool_start`, `on_tool_end`, `on_tool_error`, `on_llm_start`, `on_llm_end`.
 
