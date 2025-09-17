@@ -354,11 +354,14 @@ class Agent:
         tools: Optional[List[Tool]] = None,
         description: Optional[str] = None,
         instructions: Optional[str] = None,
+        stream: bool = False,
         callback: Optional[callable] = None,
         model: Optional[str] = None,
         input_schema: Optional[type] = None,
         output_schema: Optional[type] = None,
         hooks: Optional[Union[AgentHooks, List[callable]]] = None,
+        clean_tool_results: bool = True,
+        tool_result_clean_threshold: int = 500,
     ):
         """
         Initialize the base agent.
@@ -371,11 +374,14 @@ class Agent:
             tools: Optional list of tools (if provided, get_tools() doesn't need to be implemented)
             description: Optional description (if provided, get_agent_description() doesn't need to be implemented)
             instructions: Optional instructions for how this agent should behave when used as a tool
+            stream: Whether to use streaming output for LLM calls (defaults to False)
             callback: Optional callback function to receive status updates (event_type, data)
             model: Optional default model to use for all LLM calls
             input_schema: Optional Pydantic model for input validation (defaults to str)
             output_schema: Optional Pydantic model for output validation (defaults to str)
             hooks: Optional AgentHooks instance or list of hook functions decorated with @hook() for handling events
+            clean_tool_results: Whether to clean tool results using LLM when they exceed threshold (defaults to True)
+            tool_result_clean_threshold: Character threshold above which tool results are cleaned (defaults to 500)
         """
 
         self.name = name
@@ -391,8 +397,11 @@ class Agent:
         self.input_schema = input_schema or None
         self.output_schema = output_schema or None
         self.instructions = instructions
+        self.stream = stream
         self.callback = callback
         self.model = model
+        self.clean_tool_results = clean_tool_results
+        self.tool_result_clean_threshold = tool_result_clean_threshold
 
         # Agent mode is always tools-based
         self.mode = "tools"
@@ -404,7 +413,6 @@ class Agent:
         self.execution_context: Dict[
             str, Any
         ] = {}  # Context data shared between iterations
-        self.last_action_result: Optional[ActionResult] = None
         
         # Initialize hook system
         self._decorator_hooks = {}  # Store decorator-based hooks
@@ -587,9 +595,6 @@ class Agent:
             if self.execution_history
             else [],  # Last 3 cycles for context
             "execution_context": self.execution_context,
-            "last_action_result": self.last_action_result.dict()
-            if self.last_action_result
-            else None,
             "current_iteration": current_iteration,
             "max_iterations": self.max_iterations,
             "iterations_remaining": self.max_iterations - current_iteration,
@@ -640,7 +645,38 @@ Be thorough in your reasoning and decisive in your action selection.""",
             parent_span_id=parent_span_id,
         )
 
-        return Thought(**think_call.json_payload)
+        if self.stream:
+            # For streaming, we need to handle the response differently
+            if hasattr(think_call, 'json_payload'):
+                return Thought(**think_call.json_payload)
+            else:
+                # If it's a streaming response, we need to collect it
+                result = ""
+                for chunk in think_call.result.generator:
+                    if hasattr(chunk, 'data') and chunk.data and hasattr(chunk.data, 'delta') and chunk.data.delta:
+                        if isinstance(chunk.data.delta, str):
+                            result += chunk.data.delta
+                        elif hasattr(chunk.data.delta, 'content') and chunk.data.delta.content:
+                            result += chunk.data.delta.content
+                
+                # Try to parse as JSON
+                try:
+                    import json
+                    parsed_result = json.loads(result)
+                    return Thought(**parsed_result)
+                except json.JSONDecodeError:
+                    # Fallback to creating a basic thought
+                    return Thought(
+                        reasoning=result[:500] + "..." if len(result) > 500 else result,
+                        goal_achieved=False,
+                        task_list="Continue processing",
+                        tool_name="direct_response",
+                        tool_parameters={},
+                        expected_outcome="Complete the task",
+                        user_message="Processing the request"
+                    )
+        else:
+            return Thought(**think_call.json_payload)
 
     async def _execute_action(
         self, thought: Thought, parent_span_id: Optional[str] = None
@@ -696,14 +732,22 @@ Be thorough in your reasoning and decisive in your action selection.""",
 
             execution_time = time.time() - start_time
 
+            # Clean the tool result if it's too long
+            cleaned_result = await self.clean_tool_result(
+                tool_result=str(result),
+                tool_name=thought.tool_name,
+                goal=str(self.current_goal) if self.current_goal else "Unknown goal",
+                parent_span_id=tool_span.id if tool_span else None
+            )
+
             # Update the tool span with results
             if tool_span:
                 self.opper.spans.update(
-                    span_id=tool_span.id, output=f"Success: {str(result)[:500]}..."
+                    span_id=tool_span.id, output=f"Success: {cleaned_result[:500]}..."
                 )
 
             return ActionResult(
-                result=str(result),
+                result=cleaned_result,
                 tool_name=thought.tool_name,
                 parameters=thought.tool_parameters,
                 execution_time=execution_time,
@@ -749,9 +793,85 @@ Be thorough in your reasoning and decisive in your action selection.""",
             parent_span_id=parent_span_id,
         )
 
-        if self.output_schema:  
-            return result_call.json_payload
-        return result_call.message
+        if self.stream:
+            # Handle streaming output
+            if self.output_schema:
+                # For streaming with output schema, collect the streamed chunks
+                result = ""
+                for chunk in result_call.result.generator:
+                    if hasattr(chunk, 'data') and chunk.data and hasattr(chunk.data, 'delta') and chunk.data.delta:
+                        if isinstance(chunk.data.delta, str):
+                            result += chunk.data.delta
+                            print(chunk.data.delta, end="", flush=True)
+                        elif hasattr(chunk.data.delta, 'content') and chunk.data.delta.content:
+                            result += chunk.data.delta.content
+                            print(chunk.data.delta.content, end="", flush=True)
+                print()  # New line after streaming
+                
+                # Try to parse the complete result as JSON
+                try:
+                    import json
+                    parsed_result = json.loads(result)
+                    return parsed_result
+                except json.JSONDecodeError:
+                    # If parsing fails, try to parse markdown format
+                    return self._parse_markdown_to_json(result)
+            else:
+                # For streaming without output schema, just stream the content
+                result = ""
+                for chunk in result_call.result.generator:
+                    if hasattr(chunk, 'data') and chunk.data and hasattr(chunk.data, 'delta') and chunk.data.delta:
+                        if isinstance(chunk.data.delta, str):
+                            result += chunk.data.delta
+                            print(chunk.data.delta, end="", flush=True)
+                        elif hasattr(chunk.data.delta, 'content') and chunk.data.delta.content:
+                            result += chunk.data.delta.content
+                            print(chunk.data.delta.content, end="", flush=True)
+                print()  # New line after streaming
+                return result
+        else:
+            # Handle non-streaming output
+            if self.output_schema:  
+                return result_call.json_payload
+            return result_call.message
+
+    def _parse_markdown_to_json(self, markdown_content: str) -> dict:
+        """Parse markdown content to extract structured data as JSON."""
+        try:
+            import re
+            
+            # Initialize result dictionary
+            result = {}
+            
+            # Extract title
+            title_match = re.search(r'\*\*Title:\*\*\s*"([^"]+)"', markdown_content)
+            if title_match:
+                result['title'] = title_match.group(1)
+            
+            # Extract summary
+            summary_match = re.search(r'\*\*Summary:\*\*\s*(.+?)(?=\n\n|\n\*\*|$)', markdown_content, re.DOTALL)
+            if summary_match:
+                result['summary'] = summary_match.group(1).strip()
+            
+            # If we have an output schema, try to extract other common fields
+            if self.output_schema and hasattr(self.output_schema, 'model_fields'):
+                for field_name in self.output_schema.model_fields.keys():
+                    if field_name not in result:  # Skip if already extracted
+                        # Look for **FieldName:** pattern
+                        field_pattern = rf'\*\*{field_name.title()}:\*\*\s*(.+?)(?=\n\n|\n\*\*|$)'
+                        field_match = re.search(field_pattern, markdown_content, re.DOTALL)
+                        if field_match:
+                            result[field_name] = field_match.group(1).strip()
+            
+            # If no structured data found, return the raw content
+            if not result:
+                return {"message": markdown_content}
+            
+            return result
+            
+        except Exception as e:
+            # Fallback to returning the raw content
+            return {"message": markdown_content}
 
     def get_tools_summary(self) -> str:
         """Get a formatted summary of available tools."""
@@ -796,6 +916,105 @@ Be thorough in your reasoning and decisive in your action selection.""",
     def clear_context(self):
         """Clear the execution context. Useful for testing or manual control."""
         self.execution_context = {}
+
+    async def clean_tool_result(self, tool_result: str, tool_name: str, goal: str, parent_span_id: Optional[str] = None) -> str:
+        """
+        Clean tool results using an LLM to remove unnecessary information.
+        
+        This method uses an LLM to analyze tool results and remove bogus or unnecessary
+        information that doesn't contribute to achieving the goal.
+        
+        Args:
+            tool_result: The raw tool result to clean
+            tool_name: Name of the tool that produced the result
+            goal: The current goal being worked towards
+            parent_span_id: Optional parent span ID for tracing
+            
+        Returns:
+            Cleaned tool result with unnecessary information removed
+        """
+        if not self.clean_tool_results or len(tool_result) <= self.tool_result_clean_threshold:
+            return tool_result
+            
+        if self.verbose:
+            print(f"🧹 Cleaning tool result from {tool_name} ({len(tool_result)} chars)")
+        
+        # Create a span for the cleaning operation
+        clean_span = None
+        if parent_span_id:
+            clean_span = self.opper.spans.create(
+                name=f"clean_tool_result_{tool_name}",
+                input=f"Cleaning result from {tool_name}",
+                parent_id=parent_span_id,
+            )
+        
+        try:
+            # Use LLM to clean the tool result
+            clean_call = await self.call_llm(
+                name="clean_tool_result",
+                instructions=f"""You are tasked with cleaning a tool result to remove unnecessary information.
+
+CONTEXT:
+- Tool: {tool_name}
+- Goal: {goal}
+- Original result length: {len(tool_result)} characters
+
+TASK:
+Analyze the tool result and remove any bogus, irrelevant, or unnecessary information that doesn't contribute to achieving the goal. Keep only the essential information that is directly relevant to the goal.
+
+GUIDELINES:
+- Remove error messages, debug information, or technical details that don't help with the goal
+- Remove redundant or repetitive information
+- Keep key data, results, and actionable information
+- Maintain the original structure and format when possible
+- If the result is already clean and relevant, return it as-is
+- Be conservative - only remove clearly unnecessary information
+
+Return the cleaned result directly without any additional commentary or explanation.""",
+                input_data={
+                    "tool_name": tool_name,
+                    "goal": goal,
+                    "original_result": tool_result
+                },
+                model=self.model,
+                parent_span_id=clean_span.id if clean_span else None,
+            )
+            
+            # Extract the cleaned result
+            if self.stream:
+                # For streaming, collect the result
+                cleaned_result = ""
+                for chunk in clean_call.result.generator:
+                    if hasattr(chunk, 'data') and chunk.data and hasattr(chunk.data, 'delta') and chunk.data.delta:
+                        if isinstance(chunk.data.delta, str):
+                            cleaned_result += chunk.data.delta
+                        elif hasattr(chunk.data.delta, 'content') and chunk.data.delta.content:
+                            cleaned_result += chunk.data.delta.content
+            else:
+                cleaned_result = clean_call.message
+            
+            # Update the clean span with results
+            if clean_span:
+                self.opper.spans.update(
+                    span_id=clean_span.id,
+                    output=f"Cleaned from {len(tool_result)} to {len(cleaned_result)} characters"
+                )
+            
+            if self.verbose:
+                print(f"✅ Cleaned result: {len(tool_result)} → {len(cleaned_result)} chars")
+            
+            return cleaned_result.strip()
+            
+        except Exception as e:
+            if self.verbose:
+                print(f"⚠️  Error cleaning tool result: {e}")
+            
+            # Update the clean span with error
+            if clean_span:
+                self.opper.spans.update(span_id=clean_span.id, output=f"Error: {str(e)}")
+            
+            # Return original result if cleaning fails
+            return tool_result
 
     async def process(self, goal: Any) -> Any:
         """
@@ -842,7 +1061,6 @@ Be thorough in your reasoning and decisive in your action selection.""",
         self.current_goal = goal
         self.execution_history = []
         self.execution_context = {}  # Reset context for new goal
-        self.last_action_result = None  # Reset last action result
         self.current_iteration = 0
 
         # Update run context
@@ -925,8 +1143,7 @@ Be thorough in your reasoning and decisive in your action selection.""",
             if thought.tool_name:
                 action_result = await self._execute_action(thought, iteration_span.id)
 
-                # Store the action result for the next think cycle
-                self.last_action_result = action_result
+                # Action result is stored in execution_history
 
                 # Emit action result event
                 self._emit_status(
@@ -952,7 +1169,6 @@ Be thorough in your reasoning and decisive in your action selection.""",
                     parameters={},
                     execution_time=0.0,
                 )
-                self.last_action_result = action_result
 
             # Store this iteration's cycle
             cycle = {
@@ -1059,21 +1275,34 @@ Be thorough in your reasoning and decisive in your action selection.""",
             parent_span_id: Optional parent span ID for tracing
 
         Returns:
-            The result of the LLM call
+            The result of the LLM call (streaming or non-streaming based on self.stream)
         """
         # Trigger on_llm_start hook
         if self.hooks:
             await self._call_hook("on_llm_start", name, input_data)
         
-        result = self.opper.call(
-            name=name,
-            instructions=instructions,
-            input_schema=input_schema,
-            output_schema=output_schema,
-            input=input_data,
-            model=model or "groq/gpt-oss-120b",
-            parent_span_id=parent_span_id,
-        )
+        if self.stream:
+            # Use streaming call
+            result = self.opper.stream(
+                name=name,
+                instructions=instructions,
+                input_schema=input_schema,
+                output_schema=output_schema,
+                input=input_data,
+                model=model or "groq/gpt-oss-120b",
+                parent_span_id=parent_span_id,
+            )
+        else:
+            # Use regular call
+            result = self.opper.call(
+                name=name,
+                instructions=instructions,
+                input_schema=input_schema,
+                output_schema=output_schema,
+                input=input_data,
+                model=model or "groq/gpt-oss-120b",
+                parent_span_id=parent_span_id,
+            )
         
         # Trigger on_llm_end hook
         if self.hooks:
