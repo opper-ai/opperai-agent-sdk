@@ -307,6 +307,10 @@ class Thought(BaseModel):
         default=None,
         description="Parameters to pass to the tool"
     )
+    iteration: Optional[int] = Field(
+        default=None,
+        description="The iteration number when this thought was generated"
+    )
     expected_outcome: Optional[str] = Field(
         default=None,
         description="What we expect to happen from this action"
@@ -361,7 +365,7 @@ class Agent:
         output_schema: Optional[type] = None,
         hooks: Optional[Union[AgentHooks, List[callable]]] = None,
         clean_tool_results: bool = True,
-        tool_result_clean_threshold: int = 500,
+        tool_result_clean_threshold: int = 1000,
     ):
         """
         Initialize the base agent.
@@ -383,7 +387,6 @@ class Agent:
             clean_tool_results: Whether to clean tool results using LLM when they exceed threshold (defaults to True)
             tool_result_clean_threshold: Character threshold above which tool results are cleaned (defaults to 500)
         """
-
         self.name = name
         # try to read api key from environment variable
         if opper_api_key is None:
@@ -555,7 +558,12 @@ class Agent:
 
         # Default implementation: check if last thought indicates goal achievement
         last_cycle = execution_history[-1]
-        return last_cycle.get("goal_achieved", False)
+        if hasattr(last_cycle, 'goal_achieved'):
+            return last_cycle.goal_achieved
+        elif isinstance(last_cycle, dict):
+            return last_cycle.get("goal_achieved", False)
+        else:
+            return False
 
     def add_tool(self, tool: Tool):
         """Add a tool to the agent's toolkit."""
@@ -643,6 +651,7 @@ Follow the agent_instructions provided in the context object to guide your reaso
 
 Be thorough in your reasoning and decisive in your action selection."""
 
+        # Internal think calls should never use streaming - only final responses should stream
         think_call = await self.call_llm(
             name="think",
             instructions=instructions,
@@ -650,40 +659,13 @@ Be thorough in your reasoning and decisive in your action selection."""
             output_schema=Thought,
             model=self.model,
             parent_span_id=parent_span_id,
+            stream=False,  # Force non-streaming for internal calls
         )
 
-        if self.stream:
-            # For streaming, we need to handle the response differently
-            if hasattr(think_call, 'json_payload'):
-                return Thought(**think_call.json_payload)
-            else:
-                # If it's a streaming response, we need to collect it
-                result = ""
-                for chunk in think_call.result.generator:
-                    if hasattr(chunk, 'data') and chunk.data and hasattr(chunk.data, 'delta') and chunk.data.delta:
-                        if isinstance(chunk.data.delta, str):
-                            result += chunk.data.delta
-                        elif hasattr(chunk.data.delta, 'content') and chunk.data.delta.content:
-                            result += chunk.data.delta.content
-                
-                # Try to parse as JSON
-                try:
-                    import json
-                    parsed_result = json.loads(result)
-                    return Thought(**parsed_result)
-                except json.JSONDecodeError:
-                    # Fallback to creating a basic thought
-                    return Thought(
-                        reasoning=result[:500] + "..." if len(result) > 500 else result,
-                        goal_achieved=False,
-                        task_list="Continue processing",
-                        tool_name="direct_response",
-                        tool_parameters={},
-                        expected_outcome="Complete the task",
-                        user_message="Processing the request"
-                    )
-        else:
-            return Thought(**think_call.json_payload)
+        # Always return the structured Thought object for internal calls
+        thought_data = think_call.json_payload
+        thought_data['iteration'] = current_iteration
+        return Thought(**thought_data)
 
     async def _execute_action(
         self, thought: Thought, parent_span_id: Optional[str] = None
@@ -701,6 +683,17 @@ Be thorough in your reasoning and decisive in your action selection."""
                 result="No action needed - goal achieved",
                 tool_name="none",
                 parameters={},
+                execution_time=execution_time,
+            )
+        
+        if thought.tool_name == "direct_response":
+            # Direct response without tools - goal achieved
+            execution_time = time.time() - start_time
+            return ActionResult(
+                success=True,
+                result="Direct response provided",
+                tool_name="direct_response",
+                parameters=thought.tool_parameters or {},
                 execution_time=execution_time,
             )
 
@@ -804,42 +797,90 @@ Follow the agent_instructions provided in the context object to guide how you fo
             output_schema=self.output_schema,
             model=self.model,
             parent_span_id=parent_span_id,
+            stream=self.stream,  # Use agent's streaming setting for final result
         )
 
         if self.stream:
             # Handle streaming output
             if self.output_schema:
                 # For streaming with output schema, collect the streamed chunks
-                result = ""
+                result = {}
+                current_path = None
+                
                 for chunk in result_call.result.generator:
-                    if hasattr(chunk, 'data') and chunk.data and hasattr(chunk.data, 'delta') and chunk.data.delta:
-                        if isinstance(chunk.data.delta, str):
-                            result += chunk.data.delta
-                            print(chunk.data.delta, end="", flush=True)
-                        elif hasattr(chunk.data.delta, 'content') and chunk.data.delta.content:
-                            result += chunk.data.delta.content
-                            print(chunk.data.delta.content, end="", flush=True)
+                    if hasattr(chunk, 'data') and chunk.data:
+                        # Check for json_path to know which field is being streamed
+                        if hasattr(chunk.data, 'json_path') and chunk.data.json_path:
+                            current_path = chunk.data.json_path
+                        
+                        # Handle delta content
+                        if hasattr(chunk.data, 'delta') and chunk.data.delta:
+                            delta_content = ""
+                            if isinstance(chunk.data.delta, str):
+                                delta_content = chunk.data.delta
+                            elif hasattr(chunk.data.delta, 'content') and chunk.data.delta.content:
+                                delta_content = chunk.data.delta.content
+                            
+                            if delta_content:
+                                # If we have a path, accumulate content for that specific field
+                                if current_path:
+                                    if current_path not in result:
+                                        result[current_path] = ""
+                                    result[current_path] += delta_content
+                                    print(f"[{current_path}] {delta_content}", end="", flush=True)
+                                else:
+                                    # Fallback to concatenating all content
+                                    if 'content' not in result:
+                                        result['content'] = ""
+                                    result['content'] += delta_content
+                                    print(delta_content, end="", flush=True)
+                
                 print()  # New line after streaming
                 
-                # Try to parse the complete result as JSON
+                # Try to parse the structured result
                 try:
                     import json
-                    parsed_result = json.loads(result)
-                    return parsed_result
+                    if current_path and len(result) == 1:
+                        # Single field result
+                        parsed_result = json.loads(list(result.values())[0])
+                        return parsed_result
+                    elif 'content' in result:
+                        # Fallback to parsing content as JSON
+                        parsed_result = json.loads(result['content'])
+                        return parsed_result
+                    else:
+                        # Try to construct JSON from structured fields
+                        return result
                 except json.JSONDecodeError:
                     # If parsing fails, try to parse markdown format
-                    return self._parse_markdown_to_json(result)
+                    content = result.get('content', '') or str(result)
+                    return self._parse_markdown_to_json(content)
             else:
                 # For streaming without output schema, just stream the content
                 result = ""
+                current_path = None
+                
                 for chunk in result_call.result.generator:
-                    if hasattr(chunk, 'data') and chunk.data and hasattr(chunk.data, 'delta') and chunk.data.delta:
-                        if isinstance(chunk.data.delta, str):
-                            result += chunk.data.delta
-                            print(chunk.data.delta, end="", flush=True)
-                        elif hasattr(chunk.data.delta, 'content') and chunk.data.delta.content:
-                            result += chunk.data.delta.content
-                            print(chunk.data.delta.content, end="", flush=True)
+                    if hasattr(chunk, 'data') and chunk.data:
+                        # Check for json_path to know which field is being streamed
+                        if hasattr(chunk.data, 'json_path') and chunk.data.json_path:
+                            current_path = chunk.data.json_path
+                        
+                        # Handle delta content
+                        if hasattr(chunk.data, 'delta') and chunk.data.delta:
+                            delta_content = ""
+                            if isinstance(chunk.data.delta, str):
+                                delta_content = chunk.data.delta
+                            elif hasattr(chunk.data.delta, 'content') and chunk.data.delta.content:
+                                delta_content = chunk.data.delta.content
+                            
+                            if delta_content:
+                                result += delta_content
+                                if current_path:
+                                    print(f"[{current_path}] {delta_content}", end="", flush=True)
+                                else:
+                                    print(delta_content, end="", flush=True)
+                
                 print()  # New line after streaming
                 return result
         else:
@@ -930,6 +971,7 @@ Follow the agent_instructions provided in the context object to guide how you fo
         """Clear the execution context. Useful for testing or manual control."""
         self.execution_context = {}
 
+
     async def clean_tool_result(self, tool_result: str, tool_name: str, goal: str, parent_span_id: Optional[str] = None) -> str:
         """
         Clean tool results using an LLM to remove unnecessary information.
@@ -986,7 +1028,7 @@ Follow the agent_instructions provided in the context object to determine what i
 
 Return the cleaned result directly without any additional commentary or explanation."""
 
-            # Use LLM to clean the tool result
+            # Use LLM to clean the tool result - internal calls should not use streaming
             clean_call = await self.call_llm(
                 name="clean_tool_result",
                 instructions=clean_instructions,
@@ -998,20 +1040,11 @@ Return the cleaned result directly without any additional commentary or explanat
                 },
                 model=self.model,
                 parent_span_id=clean_span.id if clean_span else None,
+                stream=False,  # Force non-streaming for internal calls
             )
             
-            # Extract the cleaned result
-            if self.stream:
-                # For streaming, collect the result
-                cleaned_result = ""
-                for chunk in clean_call.result.generator:
-                    if hasattr(chunk, 'data') and chunk.data and hasattr(chunk.data, 'delta') and chunk.data.delta:
-                        if isinstance(chunk.data.delta, str):
-                            cleaned_result += chunk.data.delta
-                        elif hasattr(chunk.data.delta, 'content') and chunk.data.delta.content:
-                            cleaned_result += chunk.data.delta.content
-            else:
-                cleaned_result = clean_call.message
+            # Extract the cleaned result - internal calls should not use streaming
+            cleaned_result = clean_call.message
             
             # Update the clean span with results
             if clean_span:
@@ -1036,7 +1069,7 @@ Return the cleaned result directly without any additional commentary or explanat
             # Return original result if cleaning fails
             return tool_result
 
-    async def process(self, goal: Any) -> Any:
+    def process(self, goal: Any):
         """
         Process a goal using the reasoning loop: Think -> Act -> Repeat.
 
@@ -1047,23 +1080,441 @@ Return the cleaned result directly without any additional commentary or explanat
             goal: The goal to achieve (will be validated against input_schema)
 
         Returns:
-            Final result (format depends on output_schema)
+            For streaming mode: Async generator that yields chunks
+            For non-streaming mode: Coroutine that returns final result
         """
-        try:
-            # Validate input against input_schema
-            if self.input_schema and self.input_schema != str:
-                if isinstance(goal, str) and hasattr(self.input_schema, 'model_validate'):
-                    # If goal is a string but input_schema expects a Pydantic model, wrap it
-                    goal = self.input_schema.model_validate({"goal": goal})
-                elif hasattr(self.input_schema, 'model_validate'):
-                    # If input_schema is a Pydantic model, validate the goal
-                    goal = self.input_schema.model_validate(goal)
+        # Validate input against input_schema
+        if self.input_schema and self.input_schema != str:
+            if isinstance(goal, str) and hasattr(self.input_schema, 'model_validate'):
+                # If goal is a string but input_schema expects a Pydantic model, wrap it
+                goal = self.input_schema.model_validate({"goal": goal})
+            elif hasattr(self.input_schema, 'model_validate'):
+                # If input_schema is a Pydantic model, validate the goal
+                goal = self.input_schema.model_validate(goal)
             
-            return await self._process_with_tools(goal)
-        except Exception as e:
-            # Trigger on_agent_error hook
-            await self._call_hook("on_agent_error", error=e)
-            raise
+        if self.stream:
+            # For streaming mode, return an async generator
+            return self._process_with_streaming(goal)
+        else:
+            # For non-streaming mode, return a coroutine
+            return self._process_with_tools(goal)
+
+    async def _process_with_streaming(self, goal: Any):
+        """
+        Process a goal with streaming output that yields chunks in real-time.
+        
+        This method runs the same logic as _process_with_tools but yields
+        streaming chunks during the final result generation.
+        
+        Args:
+            goal: The goal to achieve
+            
+        Yields:
+            Streaming chunks with json_path and delta information
+        """
+        # Run the main processing logic up to the final result generation
+        self.current_goal = goal
+        self.execution_history = []
+        self.execution_context = {}  # Reset context for new goal
+        self.current_iteration = 0
+
+        # Update run context
+        self.run_context.goal = str(goal)
+        self.run_context.timestamp = time.time()
+        
+        # Trigger on_agent_start hook
+        await self._call_hook("on_agent_start")
+
+        # Start a trace for this goal processing session
+        trace = self.start_trace(name=f"{self.name}_tools", input_data=goal)
+
+        # Emit goal start event
+        self._emit_status(
+            "goal_start",
+            {
+                "goal": goal,
+                "agent_name": self.name,
+                "mode": "tools",
+                "available_tools": [tool.name for tool in self.tools],
+            },
+        )
+
+        if self.verbose:
+            print(f"Starting goal: {goal}")
+            print(f"🤖 Agent: {self.name}")
+            print(f"🔧 Available tools: {[tool.name for tool in self.tools]}")
+            print(f"Max iterations: {self.max_iterations}")
+
+        iteration = 0
+        goal_achieved_early = False
+        while iteration < self.max_iterations:
+            iteration += 1
+            self.current_iteration = iteration
+            
+            # Update run context with current iteration
+            self.run_context.iteration = iteration
+            
+            # Trigger on_iteration_start hook
+            await self._call_hook("on_iteration_start")
+
+            # Create a span for this iteration
+            iteration_span = self.opper.spans.create(
+                name=f"iteration_{iteration}",
+                input=f"Iteration {iteration} of goal: {goal}",
+                parent_id=trace.id,
+            )
+
+            if self.verbose:
+                print(f"\n--- Iteration {iteration} ---")
+
+            # Step 1: Think
+            await self._call_hook("on_think_start")
+            thought = await self._think(goal, iteration_span.id)
+            await self._call_hook("on_think_end", thought)
+
+            # Add thought to execution history
+            self.execution_history.append(thought)
+
+            if self.verbose:
+                print(f"💭 Thought: {thought.reasoning}")
+                if thought.tool_name:
+                    print(f"🔧 Tool: {thought.tool_name}")
+                    print(f"📝 Parameters: {thought.tool_parameters}")
+
+            # Check if goal is achieved
+            if thought.goal_achieved:
+                goal_achieved_early = True
+                if self.verbose:
+                    print("✅ Goal achieved!")
+                break
+
+            # Check if this is a direct response - skip to final result immediately
+            if thought.tool_name == "direct_response":
+                if self.verbose:
+                    print("✅ Direct response - skipping to final result")
+                
+                # Generate the final structured result with streaming immediately
+                async for chunk in self._generate_final_result_streaming(goal, self.execution_history, trace.id):
+                    yield chunk
+                
+                # Emit goal completion event
+                self._emit_status(
+                    "goal_completed",
+                    {
+                        "goal": goal,
+                        "achieved": True,
+                        "iterations": iteration,
+                        "final_result": "streamed",
+                    },
+                )
+
+                # Trigger on_agent_end hook
+                await self._call_hook("on_agent_end")
+                return
+
+            # Step 2: Act (if tool is selected)
+            if thought.tool_name:
+                await self._call_hook("on_tool_start", tool=thought.tool_name)
+                
+                # Handle special cases
+                if thought.tool_name == "none":
+                    # No action needed - goal achieved
+                    if self.verbose:
+                        print("✅ No action needed - goal achieved")
+                    
+                    # Add successful result to execution history
+                    self.execution_history.append(
+                        ActionResult(
+                            tool_name=thought.tool_name,
+                            success=True,
+                            result="No action needed - goal achieved",
+                            parameters={},
+                            execution_time=0.0  # Placeholder for now
+                        )
+                    )
+                else:
+                    # Find the tool
+                    tool = next((t for t in self.tools if t.name == thought.tool_name), None)
+                    if not tool:
+                        error_msg = f"Tool '{thought.tool_name}' not found"
+                        if self.verbose:
+                            print(f"❌ {error_msg}")
+                        
+                        # Add error to execution history
+                        self.execution_history.append(
+                            ActionResult(
+                                tool_name=thought.tool_name,
+                                success=False,
+                                result=error_msg,
+                                error=error_msg,
+                                parameters=thought.tool_parameters or {},
+                                execution_time=0.0  # Placeholder for now
+                            )
+                        )
+                    else:
+                        # Execute the tool
+                        try:
+                            if self.verbose:
+                                print(f"🔧 Executing {thought.tool_name}...")
+                            
+                            tool_result = await tool.execute(
+                                _parent_span_id=iteration_span.id,
+                                **thought.tool_parameters
+                            )
+                            
+                            if self.verbose:
+                                print(f"✅ Tool result: {tool_result}")
+                            
+                            # Extract the actual result from the tool response
+                            if isinstance(tool_result, dict) and tool_result.get("success"):
+                                actual_result = tool_result.get("result", "")
+                            else:
+                                actual_result = str(tool_result)
+                            
+                            # Clean the tool result using LLM
+                            cleaned_result = await self.clean_tool_result(
+                                actual_result, thought.tool_name, thought.goal, iteration_span.id
+                            )
+                            
+                            # Add successful result to execution history
+                            self.execution_history.append(
+                                ActionResult(
+                                    tool_name=thought.tool_name,
+                                    success=True,
+                                    result=cleaned_result,
+                                    data=tool_result,
+                                    parameters=thought.tool_parameters or {},
+                                    execution_time=0.0  # Placeholder for now
+                                )
+                            )
+                            
+                        except Exception as e:
+                            error_msg = f"Error executing {thought.tool_name}: {str(e)}"
+                            if self.verbose:
+                                print(f"❌ {error_msg}")
+                            
+                            # Add error to execution history
+                            self.execution_history.append(
+                                ActionResult(
+                                    tool_name=thought.tool_name,
+                                    success=False,
+                                    result=error_msg,
+                                    error=str(e),
+                                    parameters=thought.tool_parameters or {},
+                                    execution_time=0.0  # Placeholder for now
+                                )
+                            )
+                
+                await self._call_hook("on_tool_end", tool=thought.tool_name)
+            
+            # Update current thought
+            self.current_thought = thought
+            
+            # Trigger on_iteration_end hook
+            await self._call_hook("on_iteration_end")
+
+        # Generate the final structured result with streaming
+        async for chunk in self._generate_final_result_streaming(goal, self.execution_history, trace.id):
+            yield chunk
+
+        # Emit goal completion event
+        self._emit_status(
+            "goal_completed",
+            {
+                "goal": goal,
+                "achieved": self.is_goal_achieved(goal, self.execution_history),
+                "iterations": iteration,
+                "final_result": "streamed",
+            },
+        )
+
+        # Trigger on_agent_end hook
+        await self._call_hook("on_agent_end")
+
+    async def _generate_final_result_streaming(self, goal: Any, execution_history: List[Any], parent_span_id: Optional[str] = None):
+        """
+        Generate the final structured result with streaming output.
+        
+        This method is similar to _generate_final_result but yields streaming chunks
+        instead of printing them directly.
+        
+        Args:
+            goal: The original goal
+            execution_history: List of thoughts and actions taken
+            parent_span_id: Optional parent span ID for tracing
+            
+        Yields:
+            Streaming chunks with json_path and delta information
+        """
+        # Create a span for final result generation (defer to avoid blocking streaming)
+        final_span = None
+        if parent_span_id:
+            try:
+                final_span = self.opper.spans.create(
+                    name="generate_final_result",
+                    input=f"Generate final result for goal: {goal}",
+                    parent_id=parent_span_id,
+                )
+            except Exception:
+                # If span creation fails, continue without it to avoid blocking streaming
+                pass
+
+        # Prepare context for the final result generation
+        # For direct responses, use minimal context to speed up processing
+        if execution_history and len(execution_history) == 1 and execution_history[0].tool_name == "direct_response":
+            context = {
+                "goal": goal,
+                "agent_instructions": self.instructions or "No specific instructions provided.",
+            }
+        else:
+            context = {
+                "goal": goal,
+                "execution_history": execution_history,
+                "agent_instructions": self.instructions or "No specific instructions provided.",
+                "available_tools": [tool.name for tool in self.tools],
+                "current_iteration": self.current_iteration,
+            }
+
+        # Create instructions for final result generation
+        if execution_history and len(execution_history) == 1 and execution_history[0].tool_name == "direct_response":
+            # Simplified instructions for direct responses
+            final_instructions = """Generate a friendly, helpful response to the user's input according to the output schema.
+
+Follow the agent_instructions provided in the context object to guide your response style."""
+        else:
+            # Full instructions for complex responses
+            final_instructions = """Given the goal and the information collected in execution_history generate a final result according to the output schema.
+
+Follow the agent_instructions provided in the context object to guide how you format and present the final result."""
+
+        # Make the LLM call with streaming
+        result_call = await self.call_llm(
+            name="generate_final_result",
+            instructions=final_instructions,
+            input_data=context,
+            output_schema=self.output_schema,
+            model=self.model,
+            parent_span_id=parent_span_id,
+            stream=True,  # Force streaming for this method
+        )
+
+        # Handle streaming output
+        if self.output_schema:
+            # For streaming with output schema, collect the streamed chunks by field
+            result = {}
+            current_path = None
+            
+            for chunk in result_call.result.generator:
+                if hasattr(chunk, 'data') and chunk.data:
+                    # Check for json_path to know which field is being streamed
+                    if hasattr(chunk.data, 'json_path') and chunk.data.json_path:
+                        current_path = chunk.data.json_path
+                    
+                    # Handle delta content
+                    if hasattr(chunk.data, 'delta') and chunk.data.delta:
+                        delta_content = ""
+                        if isinstance(chunk.data.delta, str):
+                            delta_content = chunk.data.delta
+                        elif hasattr(chunk.data.delta, 'content') and chunk.data.delta.content:
+                            delta_content = chunk.data.delta.content
+                        
+                        if delta_content:
+                            # Yield the chunk with streaming information
+                            yield {
+                                "type": "streaming_chunk",
+                                "json_path": current_path,
+                                "delta": delta_content,
+                                "content": delta_content
+                            }
+                            
+                            # If we have a path, accumulate content for that specific field
+                            if current_path:
+                                if current_path not in result:
+                                    result[current_path] = ""
+                                result[current_path] += delta_content
+                            else:
+                                # Fallback to concatenating all content
+                                if 'content' not in result:
+                                    result['content'] = ""
+                                result['content'] += delta_content
+            
+            # Yield final result
+            try:
+                import json
+                if current_path and len(result) == 1:
+                    # Single field result
+                    parsed_result = json.loads(list(result.values())[0])
+                    yield {
+                        "type": "final_result",
+                        "json_path": None,
+                        "delta": None,
+                        "content": parsed_result
+                    }
+                elif 'content' in result:
+                    # Fallback to parsing content as JSON
+                    parsed_result = json.loads(result['content'])
+                    yield {
+                        "type": "final_result",
+                        "json_path": None,
+                        "delta": None,
+                        "content": parsed_result
+                    }
+                else:
+                    # Try to construct JSON from structured fields
+                    yield {
+                        "type": "final_result",
+                        "json_path": None,
+                        "delta": None,
+                        "content": result
+                    }
+            except json.JSONDecodeError:
+                # If parsing fails, try to parse markdown format
+                content = result.get('content', '') or str(result)
+                parsed_result = self._parse_markdown_to_json(content)
+                yield {
+                    "type": "final_result",
+                    "json_path": None,
+                    "delta": None,
+                    "content": parsed_result
+                }
+        else:
+            # For streaming without output schema, just stream the content
+            result = ""
+            current_path = None
+            
+            for chunk in result_call.result.generator:
+                if hasattr(chunk, 'data') and chunk.data:
+                    # Check for json_path to know which field is being streamed
+                    if hasattr(chunk.data, 'json_path') and chunk.data.json_path:
+                        current_path = chunk.data.json_path
+                    
+                    # Handle delta content
+                    if hasattr(chunk.data, 'delta') and chunk.data.delta:
+                        delta_content = ""
+                        if isinstance(chunk.data.delta, str):
+                            delta_content = chunk.data.delta
+                        elif hasattr(chunk.data.delta, 'content') and chunk.data.delta.content:
+                            delta_content = chunk.data.delta.content
+                        
+                        if delta_content:
+                            result += delta_content
+                            yield {
+                                "type": "streaming_chunk",
+                                "json_path": current_path,
+                                "delta": delta_content,
+                                "content": delta_content
+                            }
+            
+            # Yield final result
+            yield {
+                "type": "final_result",
+                "json_path": None,
+                "delta": None,
+                "content": result
+            }
+
+        # Update the span with the final result
+        self.opper.spans.update(span_id=final_span.id, output="Final result generated")
 
     async def _process_with_tools(self, goal: Any) -> Any:
         """
@@ -1154,10 +1605,30 @@ Return the cleaned result directly without any additional commentary or explanat
                     print("Goal achieved!")
                 break
         
+            # Check if this is a direct response - skip to final result immediately
             if thought.tool_name == "direct_response":
                 if self.verbose:
-                    print("Direct response!")
-                break
+                    print("✅ Direct response - skipping to final result")
+                
+                # Generate the final structured result immediately
+                final_result = await self._generate_final_result(
+                    goal, self.execution_history, trace.id
+                )
+                
+                # Emit goal completion event
+                self._emit_status(
+                    "goal_completed",
+                    {
+                        "goal": goal,
+                        "achieved": True,
+                        "iterations": iteration,
+                        "final_result": final_result,
+                    },
+                )
+
+                # Trigger on_agent_end hook
+                await self._call_hook("on_agent_end")
+                return final_result
 
             # Step 2: Act (if action is needed)
             if thought.tool_name:
@@ -1278,6 +1749,7 @@ Return the cleaned result directly without any additional commentary or explanat
         input_data: Any = None,
         model: Optional[str] = None,
         parent_span_id: Optional[str] = None,
+        stream: Optional[bool] = None,
     ):
         """
         Make a call to the LLM using Opper.
@@ -1293,15 +1765,19 @@ Return the cleaned result directly without any additional commentary or explanat
             input_data: Input data for the call
             model: Optional specific model to use (defaults to "groq/gpt-oss-120b")
             parent_span_id: Optional parent span ID for tracing
+            stream: Optional override for streaming (defaults to self.stream)
 
         Returns:
-            The result of the LLM call (streaming or non-streaming based on self.stream)
+            The result of the LLM call (streaming or non-streaming based on stream parameter)
         """
         # Trigger on_llm_start hook
         if self.hooks:
             await self._call_hook("on_llm_start", name, input_data)
         
-        if self.stream:
+        # Use stream parameter if provided, otherwise use agent's stream setting
+        use_streaming = stream if stream is not None else self.stream
+
+        if use_streaming:
             # Use streaming call
             result = self.opper.stream(
                 name=name,
