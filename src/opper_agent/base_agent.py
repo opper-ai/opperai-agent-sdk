@@ -361,7 +361,7 @@ class Agent:
         output_schema: Optional[type] = None,
         hooks: Optional[Union[AgentHooks, List[callable]]] = None,
         clean_tool_results: bool = True,
-        tool_result_clean_threshold: int = 500,
+        tool_result_clean_threshold: int = 1000,
     ):
         """
         Initialize the base agent.
@@ -381,7 +381,7 @@ class Agent:
             output_schema: Optional Pydantic model for output validation (defaults to str)
             hooks: Optional AgentHooks instance or list of hook functions decorated with @hook() for handling events
             clean_tool_results: Whether to clean tool results using LLM when they exceed threshold (defaults to True)
-            tool_result_clean_threshold: Character threshold above which tool results are cleaned (defaults to 500)
+            tool_result_clean_threshold: Character threshold above which tool results are cleaned (defaults to 1000)
         """
 
         self.name = name
