@@ -17,6 +17,7 @@ You are helping rebuild the Opper Agent SDK with clean OOP architecture, proper 
 - **Type hints everywhere** - no `Any` unless absolutely necessary
 - **Keep methods focused** - single responsibility principle (max ~30-40 lines per method)
 - **Async by default** - all agent operations are async, including `opper.call()`
+- No emojis
 
 ### 2. Testing First Approach
 - Write tests before or alongside implementation (TDD preferred)

@@ -2,18 +2,18 @@
 """
 Example demonstrating a weather agent with conversation input/output and post-thinking hooks.
 Shows how to use structured input/output schemas with hooks for monitoring.
+
+This example has been updated to work with the new Opper Agent SDK.
 """
 
 import os
-import sys
 import asyncio
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 from pydantic import BaseModel, Field
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
-
-from opper_agent_old import Agent, tool, hook, RunContext, Usage
+from opper_agent import Agent, tool, hook
+from opper_agent.base.context import AgentContext
 
 
 # --- Input/Output Schemas ---
@@ -33,13 +33,16 @@ class ConversationInput(BaseModel):
     )
 
 
-class AgentMessage(ConversationMessage):
+class AgentMessage(BaseModel):
+    """Agent's response in conversation format."""
+
+    role: str = Field(default="assistant", description="Role is always assistant")
     content: str = Field(description="The agent's response to the user")
 
 
 # --- Weather Tool ---
 @tool
-def get_weather(location: str) -> str:
+def get_weather(location: str) -> dict:
     """Get current weather information for a location."""
     time.sleep(0.5)  # Simulate API call
     from datetime import datetime
@@ -53,38 +56,50 @@ def get_weather(location: str) -> str:
         "Paris": {"date": today_date, "weather": "Overcast, 18°C, gentle breeze"},
         "Sydney": {"date": today_date, "weather": "Clear, 25°C, strong winds"},
     }
-    return weather_data.get(location, f"Weather data not available for {location}")
+    result = weather_data.get(
+        location, {"date": today_date, "weather": f"Weather data not available for {location}"}
+    )
+    return result
 
 
 @tool
 def get_current_time(location: str) -> str:
     """Get current time information for a location."""
-
     from datetime import datetime
 
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 # --- Hooks ---
-@hook("on_agent_start")
-async def on_agent_start(context: RunContext, agent: Agent):
+@hook("agent_start")
+async def on_agent_start(context: AgentContext, agent: Agent):
+    """Hook triggered when agent starts execution."""
     print(f"🤖 Weather Agent started")
     print(f"   Input: {context.goal}")
 
 
-@hook("on_think_end")
-async def on_think_end(context: RunContext, agent: Agent, thought: Any):
+@hook("think_end")
+async def on_think_end(context: AgentContext, agent: Agent, thought: Any):
     """Post-thinking hook to analyze the agent's reasoning."""
-    print(thought.user_message)
-    print(thought.todo_list)
-    print(thought.tool_name)
+    print(f"💭 Agent thinking:")
+    print(f"   Reasoning: {thought.reasoning[:100]}...")
+    print(f"   Tool calls planned: {len(thought.tool_calls)}")
+    print(f"   User message: {thought.user_message}")
+
+
+@hook("agent_end")
+async def on_agent_end(context: AgentContext, agent: Agent, result: Any):
+    """Hook triggered when agent completes execution."""
+    print(f"✅ Agent completed")
+    print(f"   Iterations: {context.iteration}")
+    print(f"   Result type: {type(result).__name__}")
 
 
 # --- Main Demo Function ---
 async def main():
     if not os.getenv("OPPER_API_KEY"):
         print("❌ Set OPPER_API_KEY environment variable")
-        sys.exit(1)
+        return
 
     print("🌤️  Weather Conversation Agent Demo")
     print("=" * 50)
@@ -93,15 +108,12 @@ async def main():
     agent = Agent(
         name="WeatherAgent",
         description="A conversational agent that can provide weather information and engage in natural conversation.",
+        instructions="You are a helpful weather assistant. Respond naturally to user queries and provide weather information when asked.",
         tools=[get_weather, get_current_time],
-        # model="anthropic/claude-3.5-sonnet",
         input_schema=ConversationInput,
         output_schema=AgentMessage,
-        verbose=False,
-        hooks=[
-            on_agent_start,
-            on_think_end,
-        ],
+        verbose=True,
+        hooks=[on_agent_start, on_think_end, on_agent_end],
     )
 
     # --- Test Cases ---
@@ -116,15 +128,23 @@ async def main():
         location="New York",
     )
     result1 = await agent.process(conversation1)
-    print(f"\nFinal Result 1: {result1}")
+    print(f"\n📤 Final Result 1:")
+    print(f"   Role: {result1.role}")
+    print(f"   Content: {result1.content}")
 
+    print("\n" + "=" * 50)
     print("\n--- Test Case 2: General Conversation ---")
     conversation2 = ConversationInput(
-        messages=[ConversationMessage(role="user", content="Hello! How are you today?")]
+        messages=[
+            ConversationMessage(role="user", content="Hello! How are you today?")
+        ]
     )
     result2 = await agent.process(conversation2)
-    print(f"\nFinal Result 2: {result2}")
+    print(f"\n📤 Final Result 2:")
+    print(f"   Role: {result2.role}")
+    print(f"   Content: {result2.content}")
 
+    print("\n" + "=" * 50)
     print("\n--- Test Case 3: Multi-turn Conversation ---")
     conversation3 = ConversationInput(
         messages=[
@@ -142,8 +162,11 @@ async def main():
         location="London",
     )
     result3 = await agent.process(conversation3)
-    print(f"\nFinal Result 3: {result3}")
+    print(f"\n📤 Final Result 3:")
+    print(f"   Role: {result3.role}")
+    print(f"   Content: {result3.content}")
 
+    print("\n" + "=" * 50)
     print("\n✅ Weather Conversation Demo Complete!")
 
 
