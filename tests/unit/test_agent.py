@@ -397,7 +397,10 @@ async def test_agent_span_hierarchy(mock_opper_client):
     """Test that agent creates proper span hierarchy with parent-child relationships."""
     # Mock span creation
     parent_span = AsyncMock(id="parent-span-123")
-    mock_opper_client.spans.create_async = AsyncMock(return_value=parent_span)
+    tool_span = AsyncMock(id="tool-span-1")
+    mock_opper_client.spans.create_async = AsyncMock(
+        side_effect=[parent_span, tool_span]
+    )
     mock_opper_client.spans.update_async = AsyncMock()
 
     # Mock LLM calls
@@ -437,11 +440,11 @@ async def test_agent_span_hierarchy(mock_opper_client):
     )
     result = await agent.process("What is 2 + 3?")
 
-    # Verify parent span was created
-    mock_opper_client.spans.create_async.assert_called_once()
-    create_call = mock_opper_client.spans.create_async.call_args
-    assert create_call.kwargs["name"] == "MathAgent_execution"
-    assert "2 + 3" in create_call.kwargs["input"]
+    # Verify parent span was created (first call)
+    assert mock_opper_client.spans.create_async.call_count == 2  # parent + 1 tool
+    parent_create_call = mock_opper_client.spans.create_async.call_args_list[0]
+    assert parent_create_call.kwargs["name"] == "MathAgent_execution"
+    assert "2 + 3" in parent_create_call.kwargs["input"]
 
     # Verify context has parent span ID
     assert agent.context.parent_span_id == "parent-span-123"
@@ -450,11 +453,163 @@ async def test_agent_span_hierarchy(mock_opper_client):
     for call in mock_opper_client.call_async.call_args_list:
         assert call.kwargs["parent_span_id"] == "parent-span-123"
 
-    # Verify parent span was updated with final output
-    mock_opper_client.spans.update_async.assert_called_once()
-    update_call = mock_opper_client.spans.update_async.call_args
-    assert update_call.kwargs["span_id"] == "parent-span-123"
-    assert "answer is 5" in update_call.kwargs["output"]
+    # Verify parent span was updated with final output (last update call)
+    parent_update_calls = [
+        call
+        for call in mock_opper_client.spans.update_async.call_args_list
+        if call.kwargs.get("span_id") == "parent-span-123"
+    ]
+    assert len(parent_update_calls) == 1
+    assert "answer is 5" in parent_update_calls[0].kwargs["output"]
+
+
+@pytest.mark.asyncio
+async def test_tool_call_span_creation(mock_opper_client):
+    """Test that each tool call creates its own span with proper hierarchy."""
+    # Mock parent span
+    parent_span = AsyncMock(id="parent-span-123")
+    mock_opper_client.spans.create_async = AsyncMock(
+        side_effect=[
+            parent_span,  # Parent span for agent execution
+            AsyncMock(id="tool-span-1"),  # Span for first tool call
+            AsyncMock(id="tool-span-2"),  # Span for second tool call
+        ]
+    )
+    mock_opper_client.spans.update_async = AsyncMock()
+
+    # Mock LLM calls
+    mock_opper_client.call_async = AsyncMock(
+        side_effect=[
+            # Think: call two tools
+            AsyncMock(
+                json_payload={
+                    "reasoning": "Need to calculate",
+                    "tool_calls": [
+                        {
+                            "name": "add",
+                            "parameters": {"a": 2, "b": 3},
+                            "reasoning": "Add first",
+                        },
+                        {
+                            "name": "multiply",
+                            "parameters": {"x": 5, "y": 4},
+                            "reasoning": "Multiply second",
+                        },
+                    ],
+                    "user_message": "Calculating...",
+                    "memory_updates": {},
+                }
+            ),
+            # Think: done
+            AsyncMock(
+                json_payload={
+                    "reasoning": "Complete",
+                    "tool_calls": [],
+                    "user_message": "Done",
+                    "memory_updates": {},
+                }
+            ),
+            # Generate final result
+            AsyncMock(message="Results: 5 and 20"),
+        ]
+    )
+
+    agent = Agent(
+        name="MathAgent",
+        tools=[add, multiply],
+        verbose=False,
+        opper_api_key="test-key",
+    )
+    result = await agent.process("Calculate")
+
+    # Verify spans were created: 1 parent + 2 tool spans
+    assert mock_opper_client.spans.create_async.call_count == 3
+
+    # Check parent span
+    parent_call = mock_opper_client.spans.create_async.call_args_list[0]
+    assert parent_call.kwargs["name"] == "MathAgent_execution"
+
+    # Check first tool span (add)
+    tool1_call = mock_opper_client.spans.create_async.call_args_list[1]
+    assert tool1_call.kwargs["name"] == "tool_add"
+    assert "a" in tool1_call.kwargs["input"]
+    assert tool1_call.kwargs["parent_id"] == "parent-span-123"
+
+    # Check second tool span (multiply)
+    tool2_call = mock_opper_client.spans.create_async.call_args_list[2]
+    assert tool2_call.kwargs["name"] == "tool_multiply"
+    assert "x" in tool2_call.kwargs["input"]
+    assert tool2_call.kwargs["parent_id"] == "parent-span-123"
+
+    # Verify tool spans were updated with results
+    assert mock_opper_client.spans.update_async.call_count == 3  # 2 tools + 1 parent
+
+    # Check tool result updates (first two calls are for tools)
+    tool1_update = mock_opper_client.spans.update_async.call_args_list[0]
+    assert tool1_update.kwargs["span_id"] == "tool-span-1"
+    assert "5" in tool1_update.kwargs["output"]
+
+    tool2_update = mock_opper_client.spans.update_async.call_args_list[1]
+    assert tool2_update.kwargs["span_id"] == "tool-span-2"
+    assert "20" in tool2_update.kwargs["output"]
+
+
+@pytest.mark.asyncio
+async def test_tool_call_span_with_error(mock_opper_client):
+    """Test that tool span captures errors properly."""
+    # Mock parent span and tool span
+    parent_span = AsyncMock(id="parent-span-123")
+    tool_span = AsyncMock(id="tool-span-error")
+    mock_opper_client.spans.create_async = AsyncMock(
+        side_effect=[parent_span, tool_span]
+    )
+    mock_opper_client.spans.update_async = AsyncMock()
+
+    # Mock LLM calls
+    mock_opper_client.call_async = AsyncMock(
+        side_effect=[
+            # Think: call failing tool
+            AsyncMock(
+                json_payload={
+                    "reasoning": "Testing error",
+                    "tool_calls": [
+                        {"name": "failing_tool", "parameters": {}, "reasoning": "Test"}
+                    ],
+                    "user_message": "Working...",
+                    "memory_updates": {},
+                }
+            ),
+            # Think: done
+            AsyncMock(
+                json_payload={
+                    "reasoning": "Complete",
+                    "tool_calls": [],
+                    "user_message": "Done",
+                    "memory_updates": {},
+                }
+            ),
+            # Generate final result
+            AsyncMock(message="Handled error"),
+        ]
+    )
+
+    agent = Agent(
+        name="TestAgent",
+        tools=[failing_tool],
+        verbose=False,
+        opper_api_key="test-key",
+    )
+    result = await agent.process("Test")
+
+    # Verify tool span was updated with error
+    tool_update_calls = [
+        call
+        for call in mock_opper_client.spans.update_async.call_args_list
+        if call.kwargs.get("span_id") == "tool-span-error"
+    ]
+    assert len(tool_update_calls) == 1
+    assert tool_update_calls[0].kwargs["output"] is None
+    assert "Intentional failure" in tool_update_calls[0].kwargs["error"]
 
 
 @pytest.mark.asyncio

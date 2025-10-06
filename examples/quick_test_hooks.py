@@ -1,0 +1,185 @@
+"""
+Quick test to verify the agent works with all hooks.
+
+Run this with: uv run python examples/quick_test_jose.py
+"""
+
+import asyncio
+import os
+from opper_agent import Agent, tool, hook
+from opper_agent.base.context import AgentContext
+from opper_agent.base.agent import BaseAgent
+from opper_agent.base.tool import Tool, ToolResult
+from pydantic import BaseModel, Field
+
+
+class MathProblem(BaseModel):
+    problem: str = Field(description="The math problem")
+
+
+class MathSolution(BaseModel):
+    answer: float = Field(description="The answer")
+    reasoning: str = Field(description="How we got it")
+
+
+@tool
+def add(a: int, b: int) -> int:
+    """Add two numbers together."""
+    return a + b
+
+
+@tool
+def multiply(x: int, y: int) -> int:
+    """Multiply two numbers together."""
+    return x * y
+
+
+@tool
+def get_user_input(query: str) -> str:
+    """Get user input."""
+    user_response = input(query + "\n")
+    return user_response
+
+
+# Hook definitions - demonstrating all available hooks
+@hook("agent_start")
+async def on_agent_start(context: AgentContext, agent: BaseAgent):
+    """Called when agent execution starts."""
+    print(f"\nHOOK: Agent '{agent.name}' starting execution")
+    print(f"   Goal: {context.goal}")
+    # context.metadata["start_timestamp"] = asyncio.get_event_loop().time()
+
+
+@hook("agent_end")
+async def on_agent_end(context: AgentContext, agent: BaseAgent, result):
+    """Called when agent execution ends successfully."""
+    elapsed = asyncio.get_event_loop().time() - context.metadata.get(
+        "start_timestamp", 0
+    )
+    print(f"\nHOOK: Agent '{agent.name}' completed successfully")
+    print(f"   Execution time: {elapsed:.2f}s")
+    print(f"   Total iterations: {context.iteration}")
+
+
+@hook("agent_error")
+async def on_agent_error(context: AgentContext, agent: BaseAgent, error: Exception):
+    """Called when agent encounters an error."""
+    print(f"\nHOOK: Agent '{agent.name}' encountered error: {error}")
+
+
+@hook("loop_start")
+async def on_loop_start(context: AgentContext, agent: BaseAgent):
+    """Called at the start of each iteration loop."""
+    print(f"\nHOOK: Loop iteration {context.iteration + 1} starting")
+
+
+@hook("loop_end")
+async def on_loop_end(context: AgentContext, agent: BaseAgent):
+    """Called at the end of each iteration loop."""
+    cycle = context.execution_history[-1] if context.execution_history else None
+    if cycle:
+        print(f"   Loop iteration {cycle.iteration + 1} completed")
+        print(f"   Tools executed: {len(cycle.results)}")
+
+
+@hook("llm_call")
+async def on_llm_call(context: AgentContext, agent: BaseAgent, call_type: str):
+    """Called before making an LLM call."""
+    print(f"\nHOOK: Making LLM call (type: {call_type})")
+
+
+@hook("llm_response")
+async def on_llm_response(
+    context: AgentContext, agent: BaseAgent, call_type: str, response
+):
+    """Called after receiving LLM response."""
+    print(f"   LLM response received (type: {call_type})")
+
+
+@hook("think_end")
+async def on_think_end(context: AgentContext, agent: BaseAgent, thought):
+    """Called after the think/reasoning step."""
+    print(f"\nHOOK: Thought completed")
+    print(f"   Reasoning: {thought.reasoning[:100]}...")
+    print(f"   Tool calls planned: {len(thought.tool_calls)}")
+
+
+@hook("tool_call")
+async def on_tool_call(
+    context: AgentContext, agent: BaseAgent, tool: Tool, parameters: dict
+):
+    """Called before executing a tool."""
+    print(f"\nHOOK: Calling tool '{tool.name}'")
+    print(f"   Parameters: {parameters}")
+
+
+@hook("tool_result")
+async def on_tool_result(
+    context: AgentContext, agent: BaseAgent, tool: Tool, result: ToolResult
+):
+    """Called after tool execution."""
+    status = "✓" if result.success else "✗"
+    print(f"   {status} Tool '{tool.name}' result: {result.result}")
+    print(f"   Execution time: {result.execution_time:.3f}s")
+
+
+async def main():
+    """Run a quick test of the agent."""
+
+    # Create agent with all hooks
+    agent = Agent(
+        name="MathAgent",
+        description="An agent that performs math operations",
+        instructions="Solve the math problem using the available tools. Before concluding ask the user if any other operations are needed.",
+        tools=[add, multiply, get_user_input],
+        hooks=[
+            on_agent_start,
+            # on_agent_end,
+        #     on_agent_error,
+            # on_loop_start,
+            # on_loop_end,
+            # on_llm_call,
+            # on_llm_response,
+            # on_think_end,
+            # on_tool_call,
+            # on_tool_result,
+        ],
+        input_schema=MathProblem,
+        output_schema=MathSolution,
+        max_iterations=5,
+        verbose=False,  # Show detailed execution
+    )
+
+    # Run a simple task
+    task_dict = {"problem": "What is (5 + 3) * 2?"}
+
+    print(f"Task: {task_dict['problem']}\n")
+
+    try:
+        result = await agent.process(task_dict)
+
+        print("\n" + "=" * 60)
+        print(f"FINAL RESULT:")
+        print(f"Answer: {result.answer}")
+        print(f"Reasoning: {result.reasoning}")
+        print("=" * 60)
+
+        # Show execution stats
+        if agent.context:
+            print(f"\nExecution Stats:")
+            print(f"  - Iterations: {agent.context.iteration}")
+            print(
+                f"  - Tool calls: {sum(len(c.tool_calls) for c in agent.context.execution_history)}"
+            )
+            print(f"  - Parent span ID: {agent.context.parent_span_id}")
+            print(f"  - Session ID: {agent.context.session_id}")
+
+    except Exception as e:
+        print(f"\nError: {e}")
+        import traceback
+
+        traceback.print_exc()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -264,7 +264,7 @@ IMPORTANT:
         return thought
 
     async def _execute_tool(self, tool_call: ToolCall) -> ToolResult:
-        """Execute a single tool call."""
+        """Execute a single tool call and create a span for it."""
 
         if self.verbose:
             print(f"[TOOL CALL] - {tool_call.name} with {tool_call.parameters}")
@@ -279,6 +279,13 @@ IMPORTANT:
                 execution_time=0.0,
             )
 
+        # Create span for this tool call
+        tool_span = await self.opper.spans.create_async(
+            name=f"tool_{tool_call.name}",
+            input=str(tool_call.parameters),
+            parent_id=self.context.parent_span_id,
+        )
+
         # Trigger: tool_call
         await self.hook_manager.trigger(
             HookEvents.TOOL_CALL,
@@ -291,6 +298,13 @@ IMPORTANT:
         # Execute
         result = await tool.execute(**tool_call.parameters)
 
+        # Update tool span with result
+        await self.opper.spans.update_async(
+            span_id=tool_span.id,
+            output=str(result.result) if result.success else None,
+            error=result.error if not result.success else None,
+        )
+
         # Trigger: tool_result
         await self.hook_manager.trigger(
             HookEvents.TOOL_RESULT, self.context, agent=self, tool=tool, result=result
@@ -298,7 +312,7 @@ IMPORTANT:
 
         if self.verbose:
             status = "Status: " + "SUCCESS" if result.success else "FAILED"
-            print(f"---> [RESULT] {status} Result: {result.result}")
+            print(f"---> [RESULT] {status} Result: {result.result}\n")
 
         return result
 
@@ -306,7 +320,7 @@ IMPORTANT:
         """Generate final structured result."""
 
         if self.verbose:
-            print("\n[GENERATING FINAL RESULT]......\n")
+            print("\n[GENERATING FINAL RESULT]\n")
 
         context = {
             "goal": str(goal),
