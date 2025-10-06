@@ -14,8 +14,8 @@ from pydantic import BaseModel, Field
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from opper_agent import Agent, hook, RunContext, create_mcp_tools_async
-from opper_agent.mcp import MCPServerConfig, MCPToolManager
+from opper_agent_old import Agent, hook, RunContext, create_mcp_tools_async
+from opper_agent_old.mcp import MCPServerConfig, MCPToolManager
 
 
 class GmailResults(BaseModel):

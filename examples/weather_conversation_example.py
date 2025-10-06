@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from opper_agent import Agent, tool, hook, RunContext, Usage
+from opper_agent_old import Agent, tool, hook, RunContext, Usage
 
 # --- Input/Output Schemas ---
 class ConversationMessage(BaseModel):
