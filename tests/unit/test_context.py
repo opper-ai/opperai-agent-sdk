@@ -4,7 +4,6 @@ Unit tests for context module.
 Tests for Usage, AgentContext, and ExecutionCycle data models.
 """
 
-import pytest
 from opper_agent.base.context import Usage, AgentContext, ExecutionCycle
 
 

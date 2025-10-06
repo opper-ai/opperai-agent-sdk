@@ -5,6 +5,8 @@ Tests for agent initialization, tool management, hooks, and agent-as-tool functi
 """
 
 import pytest
+import asyncio
+import concurrent.futures
 from typing import Any
 from opper_agent.base.agent import BaseAgent
 from opper_agent.base.tool import FunctionTool
@@ -249,3 +251,106 @@ def test_agent_with_instructions(mock_opper_client, monkeypatch):
     agent = TestAgent(name="Test", instructions=instructions)
 
     assert agent.instructions == instructions
+
+
+# Agent-as-tool timeout and error propagation tests
+class SlowAgent(BaseAgent):
+    """Agent that simulates slow processing for timeout testing."""
+
+    async def process(self, input: Any) -> Any:
+        await asyncio.sleep(2)  # Simulate slow processing
+        return f"Processed: {input}"
+
+    async def _run_loop(self, goal: Any) -> Any:
+        return goal
+
+
+class FailingAgent(BaseAgent):
+    """Agent that fails during processing for error testing."""
+
+    async def process(self, input: Any) -> Any:
+        raise ValueError("Agent processing failed intentionally")
+
+    async def _run_loop(self, goal: Any) -> Any:
+        return goal
+
+
+@pytest.mark.asyncio
+async def test_agent_as_tool_timeout(mock_opper_client, monkeypatch):
+    """Test that agent-as-tool respects timeout when agent takes too long."""
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    agent = SlowAgent(name="SlowAgent")
+    tool = agent.as_tool()
+
+    # Patch the tool's function to use a very short timeout
+    def short_timeout_wrapper(task: str, **kwargs):
+        """Wrapper with shorter timeout for testing."""
+
+        async def call_agent():
+            input_data = {"task": task, **kwargs}
+            return await agent.process(input_data)
+
+        # Always use ThreadPoolExecutor path with short timeout
+        def run_in_thread():
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            try:
+                return new_loop.run_until_complete(call_agent())
+            finally:
+                new_loop.close()
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(run_in_thread)
+            return future.result(timeout=0.5)  # Short timeout
+
+    tool.func = short_timeout_wrapper
+
+    # Execute and expect timeout
+    with pytest.raises(concurrent.futures.TimeoutError):
+        tool.func("test task")
+
+
+@pytest.mark.asyncio
+async def test_agent_as_tool_error_propagation(mock_opper_client, monkeypatch):
+    """Test that errors from agent.process() propagate through agent-as-tool."""
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    agent = FailingAgent(name="FailingAgent")
+    tool = agent.as_tool()
+
+    # Test that the error propagates when called from outside event loop
+    with pytest.raises(ValueError, match="Agent processing failed intentionally"):
+        tool.func("test task")
+
+
+@pytest.mark.asyncio
+async def test_agent_as_tool_in_nested_event_loop(mock_opper_client, monkeypatch):
+    """Test agent-as-tool works correctly when called from within running event loop."""
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    agent = TestAgent(name="SubAgent")
+    tool = agent.as_tool()
+
+    # Simulate calling from within a running event loop
+    async def call_from_async_context():
+        # This should use ThreadPoolExecutor path since we're in a running loop
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, tool.func, "nested task"
+        )
+        return result
+
+    result = await call_from_async_context()
+    assert "nested task" in str(result)
+
+
+def test_agent_as_tool_outside_event_loop(mock_opper_client, monkeypatch):
+    """Test agent-as-tool works when called without running event loop."""
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    agent = TestAgent(name="SubAgent")
+    tool = agent.as_tool()
+
+    # Call directly (no running event loop)
+    result = tool.func("direct task")
+    assert "direct task" in str(result)

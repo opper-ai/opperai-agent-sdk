@@ -111,16 +111,14 @@ class FunctionTool(Tool):
 
         try:
             # Filter out special parameters
-            filtered_kwargs = {
-                k: v for k, v in kwargs.items() if not k.startswith("_")
-            }
+            filtered_kwargs = {k: v for k, v in kwargs.items() if not k.startswith("_")}
 
             # Check if function is async
             if asyncio.iscoroutinefunction(self.func):
                 result = await self.func(**filtered_kwargs)
             else:
                 # Run sync function in executor to avoid blocking
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 result = await loop.run_in_executor(
                     None, lambda: self.func(**filtered_kwargs)
                 )

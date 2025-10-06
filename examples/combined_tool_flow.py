@@ -6,10 +6,11 @@ from pydantic import BaseModel, Field
 def tool1(place: str, date: str) -> str:
     return "The weather in " + place + " on " + date + " is sunny"
 
+
 tools_agent = Agent(
     name="WeatherAgent",
     description="Given a place and a date returns the expected weather",
-    tools=[tool1], # You implement tools
+    tools=[tool1],  # You implement tools
 )
 
 weather = tools_agent.process("What's the weather in Paris today?")
@@ -33,14 +34,20 @@ class TravelWithWeather(BaseModel):
 
 
 class TravelItinerary(BaseModel):
-    daily_plan: str = Field(description="Day-by-day itinerary with activities and attractions")
+    daily_plan: str = Field(
+        description="Day-by-day itinerary with activities and attractions"
+    )
     must_see: str = Field(description="Top must-see attractions for this duration")
-    food_recommendations: str = Field(description="Local food and restaurant suggestions")
+    food_recommendations: str = Field(
+        description="Local food and restaurant suggestions"
+    )
 
 
 # Step 1: Extract travel details from user request
 @step
-async def extract_travel_details(data: TravelRequest, ctx: ExecutionContext) -> TravelDetails:
+async def extract_travel_details(
+    data: TravelRequest, ctx: ExecutionContext
+) -> TravelDetails:
     """Extract destination city and duration from the user's travel request."""
     result = await ctx.llm(
         name="travel_parser",
@@ -54,22 +61,26 @@ async def extract_travel_details(data: TravelRequest, ctx: ExecutionContext) -> 
 
 # Step 2: Get weather information for the destination
 @step
-async def get_weather_info(data: TravelDetails, ctx: ExecutionContext) -> TravelWithWeather:
+async def get_weather_info(
+    data: TravelDetails, ctx: ExecutionContext
+) -> TravelWithWeather:
     """Get weather information for the destination using the weather agent."""
     # Use the weather agent to get weather info for the specific city
     weather_query = f"What's the weather like in {data.city} today?"
-    weather_result = tools_agent.process(weather_query)["execution_history"][-1]["action_result"]
-    
+    weather_result = tools_agent.process(weather_query)["execution_history"][-1][
+        "action_result"
+    ]
+
     return TravelWithWeather(
-        city=data.city,
-        days_of_stay=data.days_of_stay,
-        weather_info=weather_result
+        city=data.city, days_of_stay=data.days_of_stay, weather_info=weather_result
     )
 
 
 # Step 3: Create travel itinerary based on travel details AND weather
 @step
-async def create_itinerary(data: TravelWithWeather, ctx: ExecutionContext) -> TravelItinerary:
+async def create_itinerary(
+    data: TravelWithWeather, ctx: ExecutionContext
+) -> TravelItinerary:
     """Create a detailed travel itinerary considering destination, duration, and weather."""
     result = await ctx.llm(
         name="itinerary_planner",
@@ -90,8 +101,8 @@ workflow = (
         output_model=TravelItinerary,
     )
     .then(extract_travel_details)  # Step 1: TravelRequest -> TravelDetails
-    .then(get_weather_info)        # Step 2: TravelDetails -> TravelWithWeather
-    .then(create_itinerary)        # Step 3: TravelWithWeather -> TravelItinerary
+    .then(get_weather_info)  # Step 2: TravelDetails -> TravelWithWeather
+    .then(create_itinerary)  # Step 3: TravelWithWeather -> TravelItinerary
     .commit()
 )
 
@@ -105,5 +116,7 @@ agent = Agent(
 )
 
 # Process goal - executes sequential workflow
-result = agent.process("I'm visiting Rome for 3 days next weekend, can you help me plan my trip?")
+result = agent.process(
+    "I'm visiting Rome for 3 days next weekend, can you help me plan my trip?"
+)
 print(result)

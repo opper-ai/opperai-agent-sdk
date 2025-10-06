@@ -116,9 +116,7 @@ class AgentContext(BaseModel):
             summary.append(
                 {
                     "iteration": cycle.iteration,
-                    "thought": getattr(
-                        cycle.thought, "reasoning", str(cycle.thought)
-                    ),
+                    "thought": getattr(cycle.thought, "reasoning", str(cycle.thought)),
                     "tool_calls": [
                         call.name for call in getattr(cycle, "tool_calls", [])
                     ],

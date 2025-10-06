@@ -13,83 +13,110 @@ import os
 
 class Usage(BaseModel):
     """Usage statistics for agent operations."""
-    
+
     requests: int = Field(default=0, description="Number of requests made")
     input_tokens: int = Field(default=0, description="Total input tokens used")
     output_tokens: int = Field(default=0, description="Total output tokens used")
     total_tokens: int = Field(default=0, description="Total tokens used")
-    
-    def add(self, other: 'Usage') -> 'Usage':
+
+    def add(self, other: "Usage") -> "Usage":
         """Add usage statistics from another Usage object."""
         return Usage(
             requests=self.requests + other.requests,
             input_tokens=self.input_tokens + other.input_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
-            total_tokens=self.total_tokens + other.total_tokens
+            total_tokens=self.total_tokens + other.total_tokens,
         )
 
 
 class RunContext(BaseModel):
     """Context information for agent runs."""
-    
+
     agent_name: str = Field(description="Name of the agent")
     timestamp: float = Field(description="Unix timestamp when context was created")
-    iteration: Optional[int] = Field(default=None, description="Current iteration number")
-    goal: Optional[str] = Field(default=None, description="Current goal being processed")
+    iteration: Optional[int] = Field(
+        default=None, description="Current iteration number"
+    )
+    goal: Optional[str] = Field(
+        default=None, description="Current goal being processed"
+    )
     usage: Usage = Field(default_factory=Usage, description="Usage statistics")
-    
+
     # Additional context data
-    extra: Dict[str, Any] = Field(default_factory=dict, description="Additional context data")
+    extra: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional context data"
+    )
 
 
 class AgentHooks:
     """Base class for agent hooks. Override methods to handle specific events."""
-    
-    async def on_agent_start(self, context: RunContext, agent: 'Agent') -> None:
+
+    async def on_agent_start(self, context: RunContext, agent: "Agent") -> None:
         """Called when the agent starts processing a goal."""
         pass
-    
-    async def on_agent_end(self, context: RunContext, agent: 'Agent', output: Any) -> None:
+
+    async def on_agent_end(
+        self, context: RunContext, agent: "Agent", output: Any
+    ) -> None:
         """Called when the agent finishes processing a goal."""
         pass
-    
-    async def on_agent_error(self, context: RunContext, agent: 'Agent', error: Exception) -> None:
+
+    async def on_agent_error(
+        self, context: RunContext, agent: "Agent", error: Exception
+    ) -> None:
         """Called when the agent encounters an error."""
         pass
-    
-    async def on_iteration_start(self, context: RunContext, agent: 'Agent') -> None:
+
+    async def on_iteration_start(self, context: RunContext, agent: "Agent") -> None:
         """Called at the start of each reasoning iteration."""
         pass
-    
-    async def on_iteration_end(self, context: RunContext, agent: 'Agent') -> None:
+
+    async def on_iteration_end(self, context: RunContext, agent: "Agent") -> None:
         """Called at the end of each reasoning iteration."""
         pass
-    
-    async def on_think_start(self, context: RunContext, agent: 'Agent') -> None:
+
+    async def on_think_start(self, context: RunContext, agent: "Agent") -> None:
         """Called before the agent starts thinking/reasoning."""
         pass
-    
-    async def on_think_end(self, context: RunContext, agent: 'Agent', thought: Any) -> None:
+
+    async def on_think_end(
+        self, context: RunContext, agent: "Agent", thought: Any
+    ) -> None:
         """Called after the agent finishes thinking/reasoning."""
         pass
-    
-    async def on_tool_start(self, context: RunContext, agent: 'Agent', tool: 'Tool') -> None:
+
+    async def on_tool_start(
+        self, context: RunContext, agent: "Agent", tool: "Tool"
+    ) -> None:
         """Called before a tool is executed."""
         pass
-    
-    async def on_tool_end(self, context: RunContext, agent: 'Agent', tool: 'Tool', result: Any) -> None:
+
+    async def on_tool_end(
+        self, context: RunContext, agent: "Agent", tool: "Tool", result: Any
+    ) -> None:
         """Called after a tool is executed successfully."""
         pass
-    
-    async def on_tool_error(self, context: RunContext, agent: 'Agent', tool: 'Tool', error: Exception) -> None:
+
+    async def on_tool_error(
+        self, context: RunContext, agent: "Agent", tool: "Tool", error: Exception
+    ) -> None:
         """Called when a tool execution fails."""
         pass
-    
-    async def on_llm_start(self, context: RunContext, agent: 'Agent', call_name: str, input_data: Any) -> None:
+
+    async def on_llm_start(
+        self, context: RunContext, agent: "Agent", call_name: str, input_data: Any
+    ) -> None:
         """Called before an LLM call is made."""
         pass
-    
-    async def on_llm_end(self, context: RunContext, agent: 'Agent', call_name: str, input_data: Any, output: Any) -> None:
+
+    async def on_llm_end(
+        self,
+        context: RunContext,
+        agent: "Agent",
+        call_name: str,
+        input_data: Any,
+        output: Any,
+    ) -> None:
         """Called after an LLM call completes."""
         pass
 
@@ -234,17 +261,19 @@ class FunctionTool(Tool):
 def hook(event_name: str):
     """
     Decorator to create a hook function that can be passed to Agent constructor.
-    
+
     Usage:
         @hook("on_agent_start")
         async def on_start(context, agent):
             print("Agent started!")
-        
+
         agent = Agent(name="Test", tools=[...], hooks=[on_start])
     """
+
     def decorator(func):
         func._hook_event = event_name
         return func
+
     return decorator
 
 
@@ -297,23 +326,24 @@ class Thought(BaseModel):
     reasoning: str = Field(
         description="Analysis of current situation, previous results, and what needs to be done"
     )
-    goal_achieved: bool = Field(description="Whether everything needed to complete the request has been done")
-    task_list: str = Field(description="A markdown list of small atomic tasks remaining and completed in direction of the goal")
+    goal_achieved: bool = Field(
+        description="Whether everything needed to complete the request has been done"
+    )
+    task_list: str = Field(
+        description="A markdown list of small atomic tasks remaining and completed in direction of the goal"
+    )
     tool_name: Optional[str] = Field(
         default=None,
-        description="Name of the tool to use, or 'direct_response' for direct completion, or 'none' if goal achieved"
+        description="Name of the tool to use, or 'direct_response' for direct completion, or 'none' if goal achieved",
     )
     tool_parameters: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Parameters to pass to the tool"
+        default=None, description="Parameters to pass to the tool"
     )
     iteration: Optional[int] = Field(
-        default=None,
-        description="The iteration number when this thought was generated"
+        default=None, description="The iteration number when this thought was generated"
     )
     expected_outcome: Optional[str] = Field(
-        default=None,
-        description="What we expect to happen from this action"
+        default=None, description="What we expect to happen from this action"
     )
     user_message: str = Field(
         description="A note to the user on what you are about to do"
@@ -322,7 +352,6 @@ class Thought(BaseModel):
 
 class ActionResult(BaseModel):
     """Represents the result of executing an action."""
-
 
     result: str = Field(description="The result or output from the action")
     tool_name: str = Field(description="Name of the tool that was executed")
@@ -416,10 +445,10 @@ class Agent:
         self.execution_context: Dict[
             str, Any
         ] = {}  # Context data shared between iterations
-        
+
         # Initialize hook system
         self._decorator_hooks = {}  # Store decorator-based hooks
-        
+
         if hooks is None:
             self.hooks = None
         elif isinstance(hooks, AgentHooks):
@@ -429,19 +458,18 @@ class Agent:
             # Decorator-based hooks (list of functions)
             self.hooks = None
             for hook_func in hooks:
-                if hasattr(hook_func, '_hook_event'):
+                if hasattr(hook_func, "_hook_event"):
                     event_name = hook_func._hook_event
                     if event_name not in self._decorator_hooks:
                         self._decorator_hooks[event_name] = []
                     self._decorator_hooks[event_name].append(hook_func)
         else:
-            raise ValueError("hooks must be either an AgentHooks instance or a list of hook functions")
-        
+            raise ValueError(
+                "hooks must be either an AgentHooks instance or a list of hook functions"
+            )
+
         self.current_iteration: int = 0
-        self.run_context = RunContext(
-            agent_name=self.name,
-            timestamp=time.time()
-        )
+        self.run_context = RunContext(agent_name=self.name, timestamp=time.time())
 
         # Get tools and description (from constructor or subclass)
         self.tools = tools if tools is not None else self.get_tools()
@@ -460,12 +488,12 @@ class Agent:
     def hook(self, *event_names):
         """
         Decorator for registering hooks.
-        
+
         Usage:
             @agent.hook("on_agent_start")
             async def on_start(context, agent):
                 print("Agent started!")
-            
+
             @agent.hook("on_tool_start", "on_tool_end")
             async def tool_monitor(context, agent, tool, result=None):
                 if result is None:
@@ -473,12 +501,14 @@ class Agent:
                 else:
                     print(f"Tool {tool.name} completed")
         """
+
         def decorator(func):
             for event_name in event_names:
                 if event_name not in self._decorator_hooks:
                     self._decorator_hooks[event_name] = []
                 self._decorator_hooks[event_name].append(func)
             return func
+
         return decorator
 
     async def _call_hook(self, method_name: str, *args, **kwargs):
@@ -492,7 +522,7 @@ class Agent:
                 if self.verbose:
                     print(f"⚠️  Class hook error in {method_name}: {e}")
                 # Continue execution even if hook fails
-        
+
         # Call decorator-based hooks
         if method_name in self._decorator_hooks:
             for hook_func in self._decorator_hooks[method_name]:
@@ -558,7 +588,7 @@ class Agent:
 
         # Default implementation: check if last thought indicates goal achievement
         last_cycle = execution_history[-1]
-        if hasattr(last_cycle, 'goal_achieved'):
+        if hasattr(last_cycle, "goal_achieved"):
             return last_cycle.goal_achieved
         elif isinstance(last_cycle, dict):
             return last_cycle.get("goal_achieved", False)
@@ -591,7 +621,8 @@ class Agent:
             "goal": goal,
             "agent_description": self.description,
             "agent_mode": self.mode,
-            "agent_instructions": self.instructions or "No specific instructions provided.",
+            "agent_instructions": self.instructions
+            or "No specific instructions provided.",
             "available_tools": [
                 {
                     "name": tool.name,
@@ -664,7 +695,7 @@ Be thorough in your reasoning and decisive in your action selection."""
 
         # Always return the structured Thought object for internal calls
         thought_data = think_call.json_payload
-        thought_data['iteration'] = current_iteration
+        thought_data["iteration"] = current_iteration
         return Thought(**thought_data)
 
     async def _execute_action(
@@ -685,7 +716,7 @@ Be thorough in your reasoning and decisive in your action selection."""
                 parameters={},
                 execution_time=execution_time,
             )
-        
+
         if thought.tool_name == "direct_response":
             # Direct response without tools - goal achieved
             execution_time = time.time() - start_time
@@ -720,13 +751,13 @@ Be thorough in your reasoning and decisive in your action selection."""
 
             # Trigger on_tool_start hook
             await self._call_hook("on_tool_start", tool)
-            
+
             # Execute the tool with tracing context
             result = tool.execute(
                 _parent_span_id=tool_span.id if tool_span else None,
                 **thought.tool_parameters,
             )
-            
+
             # Trigger on_tool_end hook
             await self._call_hook("on_tool_end", tool, result)
 
@@ -737,7 +768,7 @@ Be thorough in your reasoning and decisive in your action selection."""
                 tool_result=str(result),
                 tool_name=thought.tool_name,
                 goal=str(self.current_goal) if self.current_goal else "Unknown goal",
-                parent_span_id=tool_span.id if tool_span else None
+                parent_span_id=tool_span.id if tool_span else None,
             )
 
             # Update the tool span with results
@@ -754,7 +785,7 @@ Be thorough in your reasoning and decisive in your action selection."""
             )
         except Exception as e:
             execution_time = time.time() - start_time
-            
+
             # Trigger on_tool_error hook
             await self._call_hook("on_tool_error", tool, e)
 
@@ -774,13 +805,14 @@ Be thorough in your reasoning and decisive in your action selection."""
         self, goal: Any, execution_history: List[Dict[str, Any]], parent_span_id: str
     ) -> Any:
         """Generate the final structured result based on the output schema."""
-       
+
         # Generate structured result using the output schema
         context = {
             "goal": goal,
             "execution_history": execution_history,
             "agent_description": self.description,
-            "agent_instructions": self.instructions or "No specific instructions provided.",
+            "agent_instructions": self.instructions
+            or "No specific instructions provided.",
             "goal_achieved": self.is_goal_achieved(goal, execution_history),
             "iterations": len(execution_history),
         }
@@ -806,86 +838,101 @@ Follow the agent_instructions provided in the context object to guide how you fo
                 # For streaming with output schema, collect the streamed chunks
                 result = {}
                 current_path = None
-                
+
                 for chunk in result_call.result.generator:
-                    if hasattr(chunk, 'data') and chunk.data:
+                    if hasattr(chunk, "data") and chunk.data:
                         # Check for json_path to know which field is being streamed
-                        if hasattr(chunk.data, 'json_path') and chunk.data.json_path:
+                        if hasattr(chunk.data, "json_path") and chunk.data.json_path:
                             current_path = chunk.data.json_path
-                        
+
                         # Handle delta content
-                        if hasattr(chunk.data, 'delta') and chunk.data.delta:
+                        if hasattr(chunk.data, "delta") and chunk.data.delta:
                             delta_content = ""
                             if isinstance(chunk.data.delta, str):
                                 delta_content = chunk.data.delta
-                            elif hasattr(chunk.data.delta, 'content') and chunk.data.delta.content:
+                            elif (
+                                hasattr(chunk.data.delta, "content")
+                                and chunk.data.delta.content
+                            ):
                                 delta_content = chunk.data.delta.content
-                            
+
                             if delta_content:
                                 # If we have a path, accumulate content for that specific field
                                 if current_path:
                                     if current_path not in result:
                                         result[current_path] = ""
                                     result[current_path] += delta_content
-                                    print(f"[{current_path}] {delta_content}", end="", flush=True)
+                                    print(
+                                        f"[{current_path}] {delta_content}",
+                                        end="",
+                                        flush=True,
+                                    )
                                 else:
                                     # Fallback to concatenating all content
-                                    if 'content' not in result:
-                                        result['content'] = ""
-                                    result['content'] += delta_content
+                                    if "content" not in result:
+                                        result["content"] = ""
+                                    result["content"] += delta_content
                                     print(delta_content, end="", flush=True)
-                
+
                 print()  # New line after streaming
-                
+
                 # Try to parse the structured result
                 try:
                     import json
+
                     if current_path and len(result) == 1:
                         # Single field result
                         parsed_result = json.loads(list(result.values())[0])
                         return parsed_result
-                    elif 'content' in result:
+                    elif "content" in result:
                         # Fallback to parsing content as JSON
-                        parsed_result = json.loads(result['content'])
+                        parsed_result = json.loads(result["content"])
                         return parsed_result
                     else:
                         # Try to construct JSON from structured fields
                         return result
                 except json.JSONDecodeError:
                     # If parsing fails, try to parse markdown format
-                    content = result.get('content', '') or str(result)
+                    content = result.get("content", "") or str(result)
                     return self._parse_markdown_to_json(content)
             else:
                 # For streaming without output schema, just stream the content
                 result = ""
                 current_path = None
-                
+
                 for chunk in result_call.result.generator:
-                    if hasattr(chunk, 'data') and chunk.data:
+                    if hasattr(chunk, "data") and chunk.data:
                         # Check for json_path to know which field is being streamed
-                        if hasattr(chunk.data, 'json_path') and chunk.data.json_path:
+                        if hasattr(chunk.data, "json_path") and chunk.data.json_path:
                             current_path = chunk.data.json_path
-                        
+
                         # Handle delta content
-                        if hasattr(chunk.data, 'delta') and chunk.data.delta:
+                        if hasattr(chunk.data, "delta") and chunk.data.delta:
                             delta_content = ""
                             if isinstance(chunk.data.delta, str):
                                 delta_content = chunk.data.delta
-                            elif hasattr(chunk.data.delta, 'content') and chunk.data.delta.content:
+                            elif (
+                                hasattr(chunk.data.delta, "content")
+                                and chunk.data.delta.content
+                            ):
                                 delta_content = chunk.data.delta.content
-                            
+
                             if delta_content:
                                 result += delta_content
                                 if current_path:
-                                    print(f"[{current_path}] {delta_content}", end="", flush=True)
+                                    print(
+                                        f"[{current_path}] {delta_content}",
+                                        end="",
+                                        flush=True,
+                                    )
                                 else:
                                     print(delta_content, end="", flush=True)
-                
+
                 print()  # New line after streaming
                 return result
         else:
             # Handle non-streaming output
-            if self.output_schema:  
+            if self.output_schema:
                 return result_call.json_payload
             return result_call.message
 
@@ -893,36 +940,44 @@ Follow the agent_instructions provided in the context object to guide how you fo
         """Parse markdown content to extract structured data as JSON."""
         try:
             import re
-            
+
             # Initialize result dictionary
             result = {}
-            
+
             # Extract title
             title_match = re.search(r'\*\*Title:\*\*\s*"([^"]+)"', markdown_content)
             if title_match:
-                result['title'] = title_match.group(1)
-            
+                result["title"] = title_match.group(1)
+
             # Extract summary
-            summary_match = re.search(r'\*\*Summary:\*\*\s*(.+?)(?=\n\n|\n\*\*|$)', markdown_content, re.DOTALL)
+            summary_match = re.search(
+                r"\*\*Summary:\*\*\s*(.+?)(?=\n\n|\n\*\*|$)",
+                markdown_content,
+                re.DOTALL,
+            )
             if summary_match:
-                result['summary'] = summary_match.group(1).strip()
-            
+                result["summary"] = summary_match.group(1).strip()
+
             # If we have an output schema, try to extract other common fields
-            if self.output_schema and hasattr(self.output_schema, 'model_fields'):
+            if self.output_schema and hasattr(self.output_schema, "model_fields"):
                 for field_name in self.output_schema.model_fields.keys():
                     if field_name not in result:  # Skip if already extracted
                         # Look for **FieldName:** pattern
-                        field_pattern = rf'\*\*{field_name.title()}:\*\*\s*(.+?)(?=\n\n|\n\*\*|$)'
-                        field_match = re.search(field_pattern, markdown_content, re.DOTALL)
+                        field_pattern = (
+                            rf"\*\*{field_name.title()}:\*\*\s*(.+?)(?=\n\n|\n\*\*|$)"
+                        )
+                        field_match = re.search(
+                            field_pattern, markdown_content, re.DOTALL
+                        )
                         if field_match:
                             result[field_name] = field_match.group(1).strip()
-            
+
             # If no structured data found, return the raw content
             if not result:
                 return {"message": markdown_content}
-            
+
             return result
-            
+
         except Exception as e:
             # Fallback to returning the raw content
             return {"message": markdown_content}
@@ -971,29 +1026,39 @@ Follow the agent_instructions provided in the context object to guide how you fo
         """Clear the execution context. Useful for testing or manual control."""
         self.execution_context = {}
 
-
-    async def clean_tool_result(self, tool_result: str, tool_name: str, goal: str, parent_span_id: Optional[str] = None) -> str:
+    async def clean_tool_result(
+        self,
+        tool_result: str,
+        tool_name: str,
+        goal: str,
+        parent_span_id: Optional[str] = None,
+    ) -> str:
         """
         Clean tool results using an LLM to remove unnecessary information.
-        
+
         This method uses an LLM to analyze tool results and remove bogus or unnecessary
         information that doesn't contribute to achieving the goal.
-        
+
         Args:
             tool_result: The raw tool result to clean
             tool_name: Name of the tool that produced the result
             goal: The current goal being worked towards
             parent_span_id: Optional parent span ID for tracing
-            
+
         Returns:
             Cleaned tool result with unnecessary information removed
         """
-        if not self.clean_tool_results or len(tool_result) <= self.tool_result_clean_threshold:
+        if (
+            not self.clean_tool_results
+            or len(tool_result) <= self.tool_result_clean_threshold
+        ):
             return tool_result
-            
+
         if self.verbose:
-            print(f"🧹 Cleaning tool result from {tool_name} ({len(tool_result)} chars)")
-        
+            print(
+                f"🧹 Cleaning tool result from {tool_name} ({len(tool_result)} chars)"
+            )
+
         # Create a span for the cleaning operation
         clean_span = None
         if parent_span_id:
@@ -1002,7 +1067,7 @@ Follow the agent_instructions provided in the context object to guide how you fo
                 input=f"Cleaning result from {tool_name}",
                 parent_id=parent_span_id,
             )
-        
+
         try:
             # Build instructions for tool result cleaning that reference context
             clean_instructions = f"""You are tasked with cleaning a tool result to remove unnecessary information.
@@ -1036,36 +1101,41 @@ Return the cleaned result directly without any additional commentary or explanat
                     "tool_name": tool_name,
                     "goal": goal,
                     "original_result": tool_result,
-                    "agent_instructions": self.instructions or "No specific instructions provided."
+                    "agent_instructions": self.instructions
+                    or "No specific instructions provided.",
                 },
                 model=self.model,
                 parent_span_id=clean_span.id if clean_span else None,
                 stream=False,  # Force non-streaming for internal calls
             )
-            
+
             # Extract the cleaned result - internal calls should not use streaming
             cleaned_result = clean_call.message
-            
+
             # Update the clean span with results
             if clean_span:
                 self.opper.spans.update(
                     span_id=clean_span.id,
-                    output=f"Cleaned from {len(tool_result)} to {len(cleaned_result)} characters"
+                    output=f"Cleaned from {len(tool_result)} to {len(cleaned_result)} characters",
                 )
-            
+
             if self.verbose:
-                print(f"✅ Cleaned result: {len(tool_result)} → {len(cleaned_result)} chars")
-            
+                print(
+                    f"✅ Cleaned result: {len(tool_result)} → {len(cleaned_result)} chars"
+                )
+
             return cleaned_result.strip()
-            
+
         except Exception as e:
             if self.verbose:
                 print(f"⚠️  Error cleaning tool result: {e}")
-            
+
             # Update the clean span with error
             if clean_span:
-                self.opper.spans.update(span_id=clean_span.id, output=f"Error: {str(e)}")
-            
+                self.opper.spans.update(
+                    span_id=clean_span.id, output=f"Error: {str(e)}"
+                )
+
             # Return original result if cleaning fails
             return tool_result
 
@@ -1085,13 +1155,13 @@ Return the cleaned result directly without any additional commentary or explanat
         """
         # Validate input against input_schema
         if self.input_schema and self.input_schema != str:
-            if isinstance(goal, str) and hasattr(self.input_schema, 'model_validate'):
+            if isinstance(goal, str) and hasattr(self.input_schema, "model_validate"):
                 # If goal is a string but input_schema expects a Pydantic model, wrap it
                 goal = self.input_schema.model_validate({"goal": goal})
-            elif hasattr(self.input_schema, 'model_validate'):
+            elif hasattr(self.input_schema, "model_validate"):
                 # If input_schema is a Pydantic model, validate the goal
                 goal = self.input_schema.model_validate(goal)
-            
+
         if self.stream:
             # For streaming mode, return an async generator
             return self._process_with_streaming(goal)
@@ -1102,13 +1172,13 @@ Return the cleaned result directly without any additional commentary or explanat
     async def _process_with_streaming(self, goal: Any):
         """
         Process a goal with streaming output that yields chunks in real-time.
-        
+
         This method runs the same logic as _process_with_tools but yields
         streaming chunks during the final result generation.
-        
+
         Args:
             goal: The goal to achieve
-            
+
         Yields:
             Streaming chunks with json_path and delta information
         """
@@ -1121,7 +1191,7 @@ Return the cleaned result directly without any additional commentary or explanat
         # Update run context
         self.run_context.goal = str(goal)
         self.run_context.timestamp = time.time()
-        
+
         # Trigger on_agent_start hook
         await self._call_hook("on_agent_start")
 
@@ -1150,10 +1220,10 @@ Return the cleaned result directly without any additional commentary or explanat
         while iteration < self.max_iterations:
             iteration += 1
             self.current_iteration = iteration
-            
+
             # Update run context with current iteration
             self.run_context.iteration = iteration
-            
+
             # Trigger on_iteration_start hook
             await self._call_hook("on_iteration_start")
 
@@ -1192,11 +1262,13 @@ Return the cleaned result directly without any additional commentary or explanat
             if thought.tool_name == "direct_response":
                 if self.verbose:
                     print("✅ Direct response - skipping to final result")
-                
+
                 # Generate the final structured result with streaming immediately
-                async for chunk in self._generate_final_result_streaming(goal, self.execution_history, trace.id):
+                async for chunk in self._generate_final_result_streaming(
+                    goal, self.execution_history, trace.id
+                ):
                     yield chunk
-                
+
                 # Emit goal completion event
                 self._emit_status(
                     "goal_completed",
@@ -1215,13 +1287,13 @@ Return the cleaned result directly without any additional commentary or explanat
             # Step 2: Act (if tool is selected)
             if thought.tool_name:
                 await self._call_hook("on_tool_start", tool=thought.tool_name)
-                
+
                 # Handle special cases
                 if thought.tool_name == "none":
                     # No action needed - goal achieved
                     if self.verbose:
                         print("✅ No action needed - goal achieved")
-                    
+
                     # Add successful result to execution history
                     self.execution_history.append(
                         ActionResult(
@@ -1229,17 +1301,19 @@ Return the cleaned result directly without any additional commentary or explanat
                             success=True,
                             result="No action needed - goal achieved",
                             parameters={},
-                            execution_time=0.0  # Placeholder for now
+                            execution_time=0.0,  # Placeholder for now
                         )
                     )
                 else:
                     # Find the tool
-                    tool = next((t for t in self.tools if t.name == thought.tool_name), None)
+                    tool = next(
+                        (t for t in self.tools if t.name == thought.tool_name), None
+                    )
                     if not tool:
                         error_msg = f"Tool '{thought.tool_name}' not found"
                         if self.verbose:
                             print(f"❌ {error_msg}")
-                        
+
                         # Add error to execution history
                         self.execution_history.append(
                             ActionResult(
@@ -1248,7 +1322,7 @@ Return the cleaned result directly without any additional commentary or explanat
                                 result=error_msg,
                                 error=error_msg,
                                 parameters=thought.tool_parameters or {},
-                                execution_time=0.0  # Placeholder for now
+                                execution_time=0.0,  # Placeholder for now
                             )
                         )
                     else:
@@ -1256,26 +1330,31 @@ Return the cleaned result directly without any additional commentary or explanat
                         try:
                             if self.verbose:
                                 print(f"🔧 Executing {thought.tool_name}...")
-                            
+
                             tool_result = await tool.execute(
                                 _parent_span_id=iteration_span.id,
-                                **thought.tool_parameters
+                                **thought.tool_parameters,
                             )
-                            
+
                             if self.verbose:
                                 print(f"✅ Tool result: {tool_result}")
-                            
+
                             # Extract the actual result from the tool response
-                            if isinstance(tool_result, dict) and tool_result.get("success"):
+                            if isinstance(tool_result, dict) and tool_result.get(
+                                "success"
+                            ):
                                 actual_result = tool_result.get("result", "")
                             else:
                                 actual_result = str(tool_result)
-                            
+
                             # Clean the tool result using LLM
                             cleaned_result = await self.clean_tool_result(
-                                actual_result, thought.tool_name, thought.goal, iteration_span.id
+                                actual_result,
+                                thought.tool_name,
+                                thought.goal,
+                                iteration_span.id,
                             )
-                            
+
                             # Add successful result to execution history
                             self.execution_history.append(
                                 ActionResult(
@@ -1284,15 +1363,15 @@ Return the cleaned result directly without any additional commentary or explanat
                                     result=cleaned_result,
                                     data=tool_result,
                                     parameters=thought.tool_parameters or {},
-                                    execution_time=0.0  # Placeholder for now
+                                    execution_time=0.0,  # Placeholder for now
                                 )
                             )
-                            
+
                         except Exception as e:
                             error_msg = f"Error executing {thought.tool_name}: {str(e)}"
                             if self.verbose:
                                 print(f"❌ {error_msg}")
-                            
+
                             # Add error to execution history
                             self.execution_history.append(
                                 ActionResult(
@@ -1301,20 +1380,22 @@ Return the cleaned result directly without any additional commentary or explanat
                                     result=error_msg,
                                     error=str(e),
                                     parameters=thought.tool_parameters or {},
-                                    execution_time=0.0  # Placeholder for now
+                                    execution_time=0.0,  # Placeholder for now
                                 )
                             )
-                
+
                 await self._call_hook("on_tool_end", tool=thought.tool_name)
-            
+
             # Update current thought
             self.current_thought = thought
-            
+
             # Trigger on_iteration_end hook
             await self._call_hook("on_iteration_end")
 
         # Generate the final structured result with streaming
-        async for chunk in self._generate_final_result_streaming(goal, self.execution_history, trace.id):
+        async for chunk in self._generate_final_result_streaming(
+            goal, self.execution_history, trace.id
+        ):
             yield chunk
 
         # Emit goal completion event
@@ -1331,18 +1412,23 @@ Return the cleaned result directly without any additional commentary or explanat
         # Trigger on_agent_end hook
         await self._call_hook("on_agent_end")
 
-    async def _generate_final_result_streaming(self, goal: Any, execution_history: List[Any], parent_span_id: Optional[str] = None):
+    async def _generate_final_result_streaming(
+        self,
+        goal: Any,
+        execution_history: List[Any],
+        parent_span_id: Optional[str] = None,
+    ):
         """
         Generate the final structured result with streaming output.
-        
+
         This method is similar to _generate_final_result but yields streaming chunks
         instead of printing them directly.
-        
+
         Args:
             goal: The original goal
             execution_history: List of thoughts and actions taken
             parent_span_id: Optional parent span ID for tracing
-            
+
         Yields:
             Streaming chunks with json_path and delta information
         """
@@ -1361,22 +1447,32 @@ Return the cleaned result directly without any additional commentary or explanat
 
         # Prepare context for the final result generation
         # For direct responses, use minimal context to speed up processing
-        if execution_history and len(execution_history) == 1 and execution_history[0].tool_name == "direct_response":
+        if (
+            execution_history
+            and len(execution_history) == 1
+            and execution_history[0].tool_name == "direct_response"
+        ):
             context = {
                 "goal": goal,
-                "agent_instructions": self.instructions or "No specific instructions provided.",
+                "agent_instructions": self.instructions
+                or "No specific instructions provided.",
             }
         else:
             context = {
                 "goal": goal,
                 "execution_history": execution_history,
-                "agent_instructions": self.instructions or "No specific instructions provided.",
+                "agent_instructions": self.instructions
+                or "No specific instructions provided.",
                 "available_tools": [tool.name for tool in self.tools],
                 "current_iteration": self.current_iteration,
             }
 
         # Create instructions for final result generation
-        if execution_history and len(execution_history) == 1 and execution_history[0].tool_name == "direct_response":
+        if (
+            execution_history
+            and len(execution_history) == 1
+            and execution_history[0].tool_name == "direct_response"
+        ):
             # Simplified instructions for direct responses
             final_instructions = """Generate a friendly, helpful response to the user's input according to the output schema.
 
@@ -1403,30 +1499,33 @@ Follow the agent_instructions provided in the context object to guide how you fo
             # For streaming with output schema, collect the streamed chunks by field
             result = {}
             current_path = None
-            
+
             for chunk in result_call.result.generator:
-                if hasattr(chunk, 'data') and chunk.data:
+                if hasattr(chunk, "data") and chunk.data:
                     # Check for json_path to know which field is being streamed
-                    if hasattr(chunk.data, 'json_path') and chunk.data.json_path:
+                    if hasattr(chunk.data, "json_path") and chunk.data.json_path:
                         current_path = chunk.data.json_path
-                    
+
                     # Handle delta content
-                    if hasattr(chunk.data, 'delta') and chunk.data.delta:
+                    if hasattr(chunk.data, "delta") and chunk.data.delta:
                         delta_content = ""
                         if isinstance(chunk.data.delta, str):
                             delta_content = chunk.data.delta
-                        elif hasattr(chunk.data.delta, 'content') and chunk.data.delta.content:
+                        elif (
+                            hasattr(chunk.data.delta, "content")
+                            and chunk.data.delta.content
+                        ):
                             delta_content = chunk.data.delta.content
-                        
+
                         if delta_content:
                             # Yield the chunk with streaming information
                             yield {
                                 "type": "streaming_chunk",
                                 "json_path": current_path,
                                 "delta": delta_content,
-                                "content": delta_content
+                                "content": delta_content,
                             }
-                            
+
                             # If we have a path, accumulate content for that specific field
                             if current_path:
                                 if current_path not in result:
@@ -1434,13 +1533,14 @@ Follow the agent_instructions provided in the context object to guide how you fo
                                 result[current_path] += delta_content
                             else:
                                 # Fallback to concatenating all content
-                                if 'content' not in result:
-                                    result['content'] = ""
-                                result['content'] += delta_content
-            
+                                if "content" not in result:
+                                    result["content"] = ""
+                                result["content"] += delta_content
+
             # Yield final result
             try:
                 import json
+
                 if current_path and len(result) == 1:
                     # Single field result
                     parsed_result = json.loads(list(result.values())[0])
@@ -1448,16 +1548,16 @@ Follow the agent_instructions provided in the context object to guide how you fo
                         "type": "final_result",
                         "json_path": None,
                         "delta": None,
-                        "content": parsed_result
+                        "content": parsed_result,
                     }
-                elif 'content' in result:
+                elif "content" in result:
                     # Fallback to parsing content as JSON
-                    parsed_result = json.loads(result['content'])
+                    parsed_result = json.loads(result["content"])
                     yield {
                         "type": "final_result",
                         "json_path": None,
                         "delta": None,
-                        "content": parsed_result
+                        "content": parsed_result,
                     }
                 else:
                     # Try to construct JSON from structured fields
@@ -1465,52 +1565,55 @@ Follow the agent_instructions provided in the context object to guide how you fo
                         "type": "final_result",
                         "json_path": None,
                         "delta": None,
-                        "content": result
+                        "content": result,
                     }
             except json.JSONDecodeError:
                 # If parsing fails, try to parse markdown format
-                content = result.get('content', '') or str(result)
+                content = result.get("content", "") or str(result)
                 parsed_result = self._parse_markdown_to_json(content)
                 yield {
                     "type": "final_result",
                     "json_path": None,
                     "delta": None,
-                    "content": parsed_result
+                    "content": parsed_result,
                 }
         else:
             # For streaming without output schema, just stream the content
             result = ""
             current_path = None
-            
+
             for chunk in result_call.result.generator:
-                if hasattr(chunk, 'data') and chunk.data:
+                if hasattr(chunk, "data") and chunk.data:
                     # Check for json_path to know which field is being streamed
-                    if hasattr(chunk.data, 'json_path') and chunk.data.json_path:
+                    if hasattr(chunk.data, "json_path") and chunk.data.json_path:
                         current_path = chunk.data.json_path
-                    
+
                     # Handle delta content
-                    if hasattr(chunk.data, 'delta') and chunk.data.delta:
+                    if hasattr(chunk.data, "delta") and chunk.data.delta:
                         delta_content = ""
                         if isinstance(chunk.data.delta, str):
                             delta_content = chunk.data.delta
-                        elif hasattr(chunk.data.delta, 'content') and chunk.data.delta.content:
+                        elif (
+                            hasattr(chunk.data.delta, "content")
+                            and chunk.data.delta.content
+                        ):
                             delta_content = chunk.data.delta.content
-                        
+
                         if delta_content:
                             result += delta_content
                             yield {
                                 "type": "streaming_chunk",
                                 "json_path": current_path,
                                 "delta": delta_content,
-                                "content": delta_content
+                                "content": delta_content,
                             }
-            
+
             # Yield final result
             yield {
                 "type": "final_result",
                 "json_path": None,
                 "delta": None,
-                "content": result
+                "content": result,
             }
 
         # Update the span with the final result
@@ -1537,7 +1640,7 @@ Follow the agent_instructions provided in the context object to guide how you fo
         # Update run context
         self.run_context.goal = str(goal)
         self.run_context.timestamp = time.time()
-        
+
         # Trigger on_agent_start hook
         await self._call_hook("on_agent_start")
 
@@ -1566,10 +1669,10 @@ Follow the agent_instructions provided in the context object to guide how you fo
         while iteration < self.max_iterations:
             iteration += 1
             self.current_iteration = iteration
-            
+
             # Update run context with current iteration
             self.run_context.iteration = iteration
-            
+
             # Trigger on_iteration_start hook
             await self._call_hook("on_iteration_start")
 
@@ -1604,17 +1707,17 @@ Follow the agent_instructions provided in the context object to guide how you fo
                 if self.verbose:
                     print("Goal achieved!")
                 break
-        
+
             # Check if this is a direct response - skip to final result immediately
             if thought.tool_name == "direct_response":
                 if self.verbose:
                     print("✅ Direct response - skipping to final result")
-                
+
                 # Generate the final structured result immediately
                 final_result = await self._generate_final_result(
                     goal, self.execution_history, trace.id
                 )
-                
+
                 # Emit goal completion event
                 self._emit_status(
                     "goal_completed",
@@ -1651,7 +1754,9 @@ Follow the agent_instructions provided in the context object to guide how you fo
                         f"Action: {action_result.tool_name} with {thought.tool_parameters}"
                     )
                     print(f"Result: {action_result.result}")
-                    print(f"Success: True")  # ActionResult always represents successful execution
+                    print(
+                        f"Success: True"
+                    )  # ActionResult always represents successful execution
             else:
                 # No action needed
                 action_result = ActionResult(
@@ -1689,7 +1794,7 @@ Follow the agent_instructions provided in the context object to guide how you fo
 
             # Update current thought
             self.current_thought = thought
-            
+
             # Trigger on_iteration_end hook
             await self._call_hook("on_iteration_end")
 
@@ -1773,7 +1878,7 @@ Follow the agent_instructions provided in the context object to guide how you fo
         # Trigger on_llm_start hook
         if self.hooks:
             await self._call_hook("on_llm_start", name, input_data)
-        
+
         # Use stream parameter if provided, otherwise use agent's stream setting
         use_streaming = stream if stream is not None else self.stream
 
@@ -1799,11 +1904,11 @@ Follow the agent_instructions provided in the context object to guide how you fo
                 model=model or "groq/gpt-oss-120b",
                 parent_span_id=parent_span_id,
             )
-        
+
         # Trigger on_llm_end hook
         if self.hooks:
             await self._call_hook("on_llm_end", name, input_data, result)
-        
+
         return result
 
     def start_trace(self, name: str, input_data: Any = None):
@@ -1821,24 +1926,26 @@ Follow the agent_instructions provided in the context object to guide how you fo
             name=name, input=str(input_data) if input_data else None
         )
 
-    def as_tool(self, tool_name: Optional[str] = None, description: Optional[str] = None) -> FunctionTool:
+    def as_tool(
+        self, tool_name: Optional[str] = None, description: Optional[str] = None
+    ) -> FunctionTool:
         """
         Convert this agent into a tool that can be used by other agents.
-        
+
         This allows agents to be used as tools in other agents' tool lists,
         enabling multi-agent systems where agents can delegate tasks to each other.
-        
+
         Args:
             tool_name: Optional custom name for the tool (defaults to agent name)
             description: Optional custom description for the tool (defaults to agent description)
-            
+
         Returns:
             FunctionTool that can be added to another agent's tools list
-            
+
         Example:
             >>> math_agent = Agent(name="MathAgent", instructions="Always show your work step by step", tools=[...])
             >>> routing_agent = Agent(
-            ...     name="RoutingAgent", 
+            ...     name="RoutingAgent",
             ...     tools=[math_agent.as_tool()]
             ... )
         """
@@ -1846,26 +1953,26 @@ Follow the agent_instructions provided in the context object to guide how you fo
         import concurrent.futures
         import time
         from typing import Any, Dict
-        
+
         tool_name = tool_name or f"{self.name}_agent"
         description = description or f"Delegate to {self.name}: {self.description}"
-        
+
         def agent_tool(task: str, **kwargs) -> Any:
             """Tool function that delegates to the agent."""
             start_time = time.time()
-            
+
             try:
                 # Create a task for the agent
                 async def call_agent():
                     # Prepare the input data
                     input_data = {"task": task, **kwargs}
-                    
+
                     # If agent has instructions, prepend them to the task
                     if self.instructions:
                         input_data["task"] = f"{self.instructions}\n\n{task}"
-                    
+
                     return await self.process(input_data)
-                
+
                 # Run the async call in a new event loop
                 def run_in_thread():
                     loop = asyncio.new_event_loop()
@@ -1874,11 +1981,11 @@ Follow the agent_instructions provided in the context object to guide how you fo
                         return loop.run_until_complete(call_agent())
                     finally:
                         loop.close()
-                
+
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future = executor.submit(run_in_thread)
                     result = future.result(timeout=60)  # 60 second timeout
-                
+
                 # Ensure the result is in the expected format
                 if isinstance(result, dict):
                     # If it's a dict, return it as-is (it should have the right structure)
@@ -1888,47 +1995,51 @@ Follow the agent_instructions provided in the context object to guide how you fo
                     return {
                         "message": str(result),
                         "success": True,
-                        "agent_used": self.name
+                        "agent_used": self.name,
                     }
-                
+
             except Exception as e:
                 return {
                     "error": f"Agent {self.name} failed: {str(e)}",
                     "success": False,
-                    "agent_used": self.name
+                    "agent_used": self.name,
                 }
-        
+
         # Create delegation parameters for the tool
         parameters = {
             "task": f"The task to be processed by {self.name}",
         }
-        
+
         # Add additional parameters from the agent's input schema if available
-        if self.input_schema and hasattr(self.input_schema, 'model_fields'):
+        if self.input_schema and hasattr(self.input_schema, "model_fields"):
             for field_name, field_info in self.input_schema.model_fields.items():
                 if field_name != "task":  # Skip task as it's already defined
                     field_type = field_info.annotation
-                    field_description = field_info.description or f"Parameter {field_name}"
-                    
+                    field_description = (
+                        field_info.description or f"Parameter {field_name}"
+                    )
+
                     # Convert type to string for documentation
-                    if hasattr(field_type, '__name__'):
+                    if hasattr(field_type, "__name__"):
                         type_str = field_type.__name__
                     else:
                         type_str = str(field_type)
-                    
+
                     parameters[field_name] = f"{field_description} (Type: {type_str})"
-        
+
         # Add common delegation parameters
-        parameters.update({
-            "user_id": "ID of the user making the request (optional)",
-            "priority": "Priority level 1-5 (optional, default: 1)"
-        })
-        
+        parameters.update(
+            {
+                "user_id": "ID of the user making the request (optional)",
+                "priority": "Priority level 1-5 (optional, default: 1)",
+            }
+        )
+
         return FunctionTool(
             func=agent_tool,
             name=tool_name,
             description=description,
-            parameters=parameters
+            parameters=parameters,
         )
 
     def __str__(self) -> str:

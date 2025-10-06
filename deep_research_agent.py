@@ -10,12 +10,21 @@ from opper_agent_old.mcp import MCPServerConfig, MCPToolManager
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
+
 # Lets add an input schema so we can structure the input to the agent
 class ResearchRequest(BaseModel):
     topic: str = Field(description="The main topic or question to research")
-    depth: str = Field(default="comprehensive", description="Research depth: 'quick', 'standard', or 'comprehensive'")
-    focus_areas: Optional[List[str]] = Field(default=None, description="Specific areas or subtopics to focus on")
-    sources_required: int = Field(default=10, description="Minimum number of sources to gather")
+    depth: str = Field(
+        default="comprehensive",
+        description="Research depth: 'quick', 'standard', or 'comprehensive'",
+    )
+    focus_areas: Optional[List[str]] = Field(
+        default=None, description="Specific areas or subtopics to focus on"
+    )
+    sources_required: int = Field(
+        default=10, description="Minimum number of sources to gather"
+    )
+
 
 # Lets also add an output schema so we can structure the output from the agent
 class ResearchFindings(BaseModel):
@@ -25,19 +34,24 @@ class ResearchFindings(BaseModel):
     key_findings: List[str] = Field(description="Main findings from the research")
     detailed_analysis: str = Field(description="In-depth analysis of the topic")
 
+
 # We need to give it some tools. Lets connect to Composio and access search tools
 mcp = MCPToolManager()
-mcp.add_server(MCPServerConfig(
-    name="composio-search",
-    url="https://apollo.composio.dev/v3/mcp/6f548f6b-1eeb-400d-9a75-59a6a7788b41/mcp?user_id=pg-test-afc92e70-3424-4c48-8444-deb49953260c",
-    transport="http-sse",
-    enabled=True
-))
+mcp.add_server(
+    MCPServerConfig(
+        name="composio-search",
+        url="https://apollo.composio.dev/v3/mcp/6f548f6b-1eeb-400d-9a75-59a6a7788b41/mcp?user_id=pg-test-afc92e70-3424-4c48-8444-deb49953260c",
+        transport="http-sse",
+        enabled=True,
+    )
+)
+
 
 # Actually lets add a hookk so we can peak into the agents reasoning as it is working
 @hook("on_think_end")
 async def on_think_end(context: RunContext, agent: Agent, thought: any):
     print(thought.user_message)
+
 
 # Lets add a custom tool so that the agent can save the report to a file
 @tool(description="Save the comprehensive report to a file in markdown format")
@@ -48,7 +62,6 @@ def save_report(report: str):
 
 
 async def main():
-    
     # Lets connect to the mcp servers and get the tools
     await mcp.connect_all()
     tools = mcp.get_all_tools()
@@ -77,7 +90,7 @@ async def main():
         output_schema=ResearchFindings,
         tools=tools,
         hooks=[on_think_end],
-        model="groq/gpt-oss-120b" # Fast and cheap! But you can use any model you want.
+        model="groq/gpt-oss-120b",  # Fast and cheap! But you can use any model you want.
     )
 
     result = await agent.process(
@@ -85,12 +98,13 @@ async def main():
             topic="What is Opper AI?",
             depth="comprehensive",
             focus_areas=["traction", "team", "product", "innovation"],
-            sources_required=15
+            sources_required=15,
         )
     )
     print(result)
 
     await mcp.disconnect_all()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

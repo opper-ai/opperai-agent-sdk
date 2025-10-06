@@ -53,7 +53,7 @@ async def test_hook_failure_doesnt_break():
 
     # Should not raise, and working hook should execute
     await manager.trigger(HookEvents.AGENT_START, context)
-    assert context.metadata.get("success") == True
+    assert context.metadata.get("success") is True
 
 
 @pytest.mark.asyncio

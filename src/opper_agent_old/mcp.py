@@ -23,8 +23,10 @@ logger = logging.getLogger(__name__)
 # MCP Protocol Types and Exceptions
 # ============================================================================
 
+
 class MCPTransportType(Enum):
     """Supported MCP transport types."""
+
     STDIO = "stdio"
     SSE = "sse"
     HTTP = "http"
@@ -33,6 +35,7 @@ class MCPTransportType(Enum):
 @dataclass
 class MCPToolSchema:
     """MCP tool schema definition."""
+
     name: str
     description: str
     inputSchema: Dict[str, Any]
@@ -41,6 +44,7 @@ class MCPToolSchema:
 @dataclass
 class MCPResource:
     """MCP resource definition."""
+
     uri: str
     name: str
     description: Optional[str] = None
@@ -50,6 +54,7 @@ class MCPResource:
 @dataclass
 class MCPPrompt:
     """MCP prompt definition."""
+
     name: str
     description: str
     arguments: Optional[List[Dict[str, Any]]] = None
@@ -57,16 +62,19 @@ class MCPPrompt:
 
 class MCPError(Exception):
     """Base exception for MCP-related errors."""
+
     pass
 
 
 class MCPConnectionError(MCPError):
     """Exception raised when MCP connection fails."""
+
     pass
 
 
 class MCPToolError(MCPError):
     """Exception raised when MCP tool execution fails."""
+
     pass
 
 
@@ -74,14 +82,15 @@ class MCPToolError(MCPError):
 # MCP Client Implementations
 # ============================================================================
 
+
 class MCPClient:
     """
     Model Context Protocol client for connecting to MCP servers.
-    
+
     Supports stdio transport for connecting to MCP servers that communicate
     via standard input/output streams.
     """
-    
+
     def __init__(
         self,
         command: str,
@@ -91,7 +100,7 @@ class MCPClient:
     ):
         """
         Initialize MCP client.
-        
+
         Args:
             command: Command to start the MCP server
             args: Arguments for the server command
@@ -102,7 +111,7 @@ class MCPClient:
         self.args = args or []
         self.env = env
         self.timeout = timeout
-        
+
         self._process: Optional[subprocess.Popen] = None
         self._request_id = 0
         self._pending_requests: Dict[str, asyncio.Future] = {}
@@ -111,7 +120,7 @@ class MCPClient:
         self._resources: Dict[str, MCPResource] = {}
         self._prompts: Dict[str, MCPPrompt] = {}
         self._connected = False
-    
+
     async def connect(self) -> None:
         """Connect to the MCP server."""
         try:
@@ -124,20 +133,20 @@ class MCPClient:
                 text=True,
                 env=self.env,
             )
-            
+
             # Start background task to read responses
             asyncio.create_task(self._read_responses())
-            
+
             # Initialize the connection
             await self._initialize()
             self._connected = True
-            
+
             logger.info(f"Connected to MCP server: {self.command}")
-            
+
         except Exception as e:
             logger.error(f"Failed to connect to MCP server: {e}")
             raise MCPConnectionError(f"Failed to connect to MCP server: {e}")
-    
+
     async def disconnect(self) -> None:
         """Disconnect from the MCP server."""
         if self._process:
@@ -152,13 +161,13 @@ class MCPClient:
                 self._process = None
                 self._connected = False
                 logger.info("Disconnected from MCP server")
-    
+
     async def _wait_for_process(self) -> None:
         """Wait for the process to terminate."""
         if self._process:
             while self._process.poll() is None:
                 await asyncio.sleep(0.1)
-    
+
     async def _initialize(self) -> None:
         """Initialize the MCP connection."""
         # Send initialize request
@@ -170,15 +179,15 @@ class MCPClient:
                 "clientInfo": {"name": "opper-agent-sdk", "version": "0.1.0"},
             },
         )
-        
+
         self._capabilities = response.get("capabilities", {})
-        
+
         # Send initialized notification
         await self._send_notification("notifications/initialized")
-        
+
         # Load available tools, resources, and prompts
         await self._load_capabilities()
-    
+
     async def _load_capabilities(self) -> None:
         """Load available tools, resources, and prompts from the server."""
         # Load tools
@@ -196,7 +205,7 @@ class MCPClient:
                 logger.info(f"Loaded {len(self._tools)} MCP tools")
             except Exception as e:
                 logger.warning(f"Failed to load MCP tools: {e}")
-        
+
         # Load resources
         if self._capabilities and "resources" in self._capabilities:
             try:
@@ -213,7 +222,7 @@ class MCPClient:
                 logger.info(f"Loaded {len(self._resources)} MCP resources")
             except Exception as e:
                 logger.warning(f"Failed to load MCP resources: {e}")
-        
+
         # Load prompts
         if self._capabilities and "prompts" in self._capabilities:
             try:
@@ -229,69 +238,69 @@ class MCPClient:
                 logger.info(f"Loaded {len(self._prompts)} MCP prompts")
             except Exception as e:
                 logger.warning(f"Failed to load MCP prompts: {e}")
-    
+
     async def _send_request(
         self, method: str, params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Send a JSON-RPC request to the MCP server."""
         if not self._process or not self._process.stdin:
             raise MCPConnectionError("Not connected to MCP server")
-        
+
         self._request_id += 1
         request_id = str(self._request_id)
-        
+
         request = {
             "jsonrpc": "2.0",
             "id": request_id,
             "method": method,
             "params": params or {},
         }
-        
+
         # Create future for response
         future = asyncio.Future()
         self._pending_requests[request_id] = future
-        
+
         try:
             # Send request
             request_json = json.dumps(request) + "\n"
             self._process.stdin.write(request_json)
             self._process.stdin.flush()
-            
+
             # Wait for response
             response = await asyncio.wait_for(future, timeout=self.timeout)
             return response
-            
+
         except asyncio.TimeoutError:
             self._pending_requests.pop(request_id, None)
             raise MCPError(f"Request timeout for method: {method}")
         except Exception as e:
             self._pending_requests.pop(request_id, None)
             raise MCPError(f"Request failed for method {method}: {e}")
-    
+
     async def _send_notification(
         self, method: str, params: Optional[Dict[str, Any]] = None
     ) -> None:
         """Send a JSON-RPC notification to the MCP server."""
         if not self._process or not self._process.stdin:
             raise MCPConnectionError("Not connected to MCP server")
-        
+
         notification = {"jsonrpc": "2.0", "method": method, "params": params or {}}
-        
+
         notification_json = json.dumps(notification) + "\n"
         self._process.stdin.write(notification_json)
         self._process.stdin.flush()
-    
+
     async def _read_responses(self) -> None:
         """Background task to read responses from the MCP server."""
         if not self._process or not self._process.stdout:
             return
-        
+
         try:
             while self._process and self._process.poll() is None:
                 line = self._process.stdout.readline()
                 if not line:
                     break
-                
+
                 try:
                     response = json.loads(line.strip())
                     await self._handle_response(response)
@@ -299,10 +308,10 @@ class MCPClient:
                     logger.warning(f"Failed to parse MCP response: {e}")
                 except Exception as e:
                     logger.error(f"Error handling MCP response: {e}")
-                    
+
         except Exception as e:
             logger.error(f"Error reading MCP responses: {e}")
-    
+
     async def _handle_response(self, response: Dict[str, Any]) -> None:
         """Handle a response from the MCP server."""
         if "id" in response:
@@ -319,60 +328,60 @@ class MCPClient:
             # This is a notification - log it
             method = response.get("method", "unknown")
             logger.debug(f"Received MCP notification: {method}")
-    
+
     def get_tools(self) -> List[MCPToolSchema]:
         """Get list of available tools."""
         return list(self._tools.values())
-    
+
     def get_resources(self) -> List[MCPResource]:
         """Get list of available resources."""
         return list(self._resources.values())
-    
+
     def get_prompts(self) -> List[MCPPrompt]:
         """Get list of available prompts."""
         return list(self._prompts.values())
-    
+
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """
         Call a tool on the MCP server.
-        
+
         Args:
             name: Name of the tool to call
             arguments: Arguments to pass to the tool
-            
+
         Returns:
             Tool execution result
-            
+
         Raises:
             MCPToolError: If tool execution fails
         """
         if not self._connected:
             raise MCPConnectionError("Not connected to MCP server")
-        
+
         if name not in self._tools:
             raise MCPToolError(f"Tool not found: {name}")
-        
+
         try:
             response = await self._send_request(
                 "tools/call", {"name": name, "arguments": arguments}
             )
-            
+
             return response
-            
+
         except Exception as e:
             logger.error(f"MCP tool call failed for {name}: {e}")
             raise MCPToolError(f"Tool call failed for {name}: {e}")
-    
+
     @property
     def is_connected(self) -> bool:
         """Check if connected to MCP server."""
         return self._connected
-    
+
     async def __aenter__(self):
         """Async context manager entry."""
         await self.connect()
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
         await self.disconnect()
@@ -381,11 +390,11 @@ class MCPClient:
 class MCPHTTPClient:
     """
     HTTP-based Model Context Protocol client for connecting to MCP servers.
-    
+
     Supports HTTP and HTTP-SSE transports for connecting to MCP servers that
     communicate via HTTP endpoints.
     """
-    
+
     def __init__(
         self,
         url: str,
@@ -395,7 +404,7 @@ class MCPHTTPClient:
     ):
         """
         Initialize HTTP MCP client.
-        
+
         Args:
             url: Base URL of the MCP server
             transport: Transport type ("http" or "http-sse")
@@ -406,7 +415,7 @@ class MCPHTTPClient:
         self.transport = transport
         self.timeout = timeout
         self.headers = headers or {}
-        
+
         self._request_id = 0
         self._pending_requests: Dict[str, asyncio.Future] = {}
         self._capabilities: Optional[Dict[str, Any]] = None
@@ -415,22 +424,22 @@ class MCPHTTPClient:
         self._prompts: Dict[str, MCPPrompt] = {}
         self._connected = False
         self._session = None
-    
+
     async def connect(self) -> None:
         """Connect to the HTTP MCP server."""
         try:
             import aiohttp
-            
+
             self._session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout), headers=self.headers
             )
-            
+
             # Initialize the connection
             await self._initialize()
             self._connected = True
-            
+
             logger.info(f"Connected to HTTP MCP server: {self.url}")
-            
+
         except ImportError:
             raise MCPConnectionError(
                 "aiohttp is required for HTTP MCP clients. Install with: pip install aiohttp"
@@ -438,7 +447,7 @@ class MCPHTTPClient:
         except Exception as e:
             logger.error(f"Failed to connect to HTTP MCP server: {e}")
             raise MCPConnectionError(f"Failed to connect to HTTP MCP server: {e}")
-    
+
     async def disconnect(self) -> None:
         """Disconnect from the HTTP MCP server."""
         if self._session:
@@ -452,7 +461,7 @@ class MCPHTTPClient:
                 self._session = None
                 self._connected = False
                 logger.info("Disconnected from HTTP MCP server")
-    
+
     async def _initialize(self) -> None:
         """Initialize the HTTP MCP connection."""
         # Send initialize request
@@ -464,12 +473,12 @@ class MCPHTTPClient:
                 "clientInfo": {"name": "opper-agent-sdk", "version": "0.1.0"},
             },
         )
-        
+
         self._capabilities = response.get("capabilities", {})
-        
+
         # Load available tools, resources, and prompts
         await self._load_capabilities()
-    
+
     async def _load_capabilities(self) -> None:
         """Load available tools, resources, and prompts from the server."""
         # Load tools
@@ -487,7 +496,7 @@ class MCPHTTPClient:
                 logger.info(f"Loaded {len(self._tools)} HTTP MCP tools")
             except Exception as e:
                 logger.warning(f"Failed to load HTTP MCP tools: {e}")
-        
+
         # Load resources
         if self._capabilities and "resources" in self._capabilities:
             try:
@@ -504,7 +513,7 @@ class MCPHTTPClient:
                 logger.info(f"Loaded {len(self._resources)} HTTP MCP resources")
             except Exception as e:
                 logger.warning(f"Failed to load HTTP MCP resources: {e}")
-        
+
         # Load prompts
         if self._capabilities and "prompts" in self._capabilities:
             try:
@@ -520,24 +529,24 @@ class MCPHTTPClient:
                 logger.info(f"Loaded {len(self._prompts)} HTTP MCP prompts")
             except Exception as e:
                 logger.warning(f"Failed to load HTTP MCP prompts: {e}")
-    
+
     async def _send_request(
         self, method: str, params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Send a JSON-RPC request to the HTTP MCP server."""
         if not self._session:
             raise MCPConnectionError("Not connected to HTTP MCP server")
-        
+
         self._request_id += 1
         request_id = str(self._request_id)
-        
+
         request = {
             "jsonrpc": "2.0",
             "id": request_id,
             "method": method,
             "params": params or {},
         }
-        
+
         try:
             # Try different endpoint patterns for MCP over HTTP
             endpoints_to_try = [
@@ -545,7 +554,7 @@ class MCPHTTPClient:
                 f"{self.url}/rpc",  # Standard RPC endpoint
                 f"{self.url}/mcp",  # MCP-specific endpoint
             ]
-            
+
             last_error = None
             for endpoint in endpoints_to_try:
                 try:
@@ -560,7 +569,7 @@ class MCPHTTPClient:
                         if response.status == 200:
                             # Handle SSE response format
                             response_text = await response.text()
-                            
+
                             # Parse SSE format: look for "data: " lines
                             response_data = None
                             for line in response_text.split("\n"):
@@ -572,7 +581,7 @@ class MCPHTTPClient:
                                         break
                                     except json.JSONDecodeError:
                                         continue
-                            
+
                             if not response_data:
                                 # If no SSE data found, try parsing as regular JSON
                                 try:
@@ -582,85 +591,85 @@ class MCPHTTPClient:
                                         f"Could not parse response: {response_text}"
                                     )
                                     continue
-                            
+
                             if "error" in response_data:
                                 error = response_data["error"]
                                 raise MCPError(f"MCP error: {error}")
-                            
+
                             return response_data.get("result", {})
                         else:
                             last_error = (
                                 f"HTTP error {response.status}: {await response.text()}"
                             )
                             continue
-                
+
                 except Exception as e:
                     last_error = str(e)
                     continue
-            
+
             # If all endpoints failed, raise the last error
             raise MCPError(f"All endpoints failed. Last error: {last_error}")
-            
+
         except asyncio.TimeoutError:
             raise MCPError(f"Request timeout for method: {method}")
         except MCPError:
             raise
         except Exception as e:
             raise MCPError(f"Request failed for method {method}: {e}")
-    
+
     def get_tools(self) -> List[MCPToolSchema]:
         """Get list of available tools."""
         return list(self._tools.values())
-    
+
     def get_resources(self) -> List[MCPResource]:
         """Get list of available resources."""
         return list(self._resources.values())
-    
+
     def get_prompts(self) -> List[MCPPrompt]:
         """Get list of available prompts."""
         return list(self._prompts.values())
-    
+
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """
         Call a tool on the HTTP MCP server.
-        
+
         Args:
             name: Name of the tool to call
             arguments: Arguments to pass to the tool
-            
+
         Returns:
             Tool execution result
-            
+
         Raises:
             MCPToolError: If tool execution fails
         """
         if not self._connected:
             raise MCPConnectionError("Not connected to HTTP MCP server")
-        
+
         if name not in self._tools:
             raise MCPToolError(f"Tool not found: {name}")
-        
+
         try:
             response = await self._send_request(
                 "tools/call", {"name": name, "arguments": arguments}
             )
-            
+
             return response
-            
+
         except Exception as e:
             logger.error(f"HTTP MCP tool call failed for {name}: {e}")
             raise MCPToolError(f"Tool call failed for {name}: {e}")
-    
+
     @property
     def is_connected(self) -> bool:
         """Check if connected to HTTP MCP server."""
         return self._connected
-    
+
     async def __aenter__(self):
         """Async context manager entry."""
         await self.connect()
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
         await self.disconnect()
@@ -670,9 +679,10 @@ class MCPHTTPClient:
 # MCP Server Configuration
 # ============================================================================
 
+
 class MCPServerConfig:
     """Configuration for MCP servers."""
-    
+
     def __init__(
         self,
         name: str,
@@ -687,7 +697,7 @@ class MCPServerConfig:
     ):
         """
         Initialize MCP server configuration.
-        
+
         Args:
             name: Friendly name for the server
             command: Command to start the server (for stdio transport)
@@ -708,13 +718,13 @@ class MCPServerConfig:
         self.url = url
         self.transport = transport
         self.enabled = enabled
-        
+
         # Validate configuration
         if transport == "stdio" and not command:
             raise ValueError("Command is required for stdio transport")
         if transport in ["http-sse", "http"] and not url:
             raise ValueError("URL is required for HTTP-based transports")
-    
+
     def create_client(self) -> "MCPClient":
         """Create an MCP client from this configuration."""
         if self.transport == "stdio":
@@ -733,20 +743,21 @@ class MCPServerConfig:
 # MCP Tool Integration for Opper Agent
 # ============================================================================
 
+
 class MCPToolAdapter:
     """
     Adapter that converts MCP tools into Opper Agent tools.
-    
+
     This class manages MCP client connections and provides a bridge
     between MCP tools and the Opper Agent tool system.
     """
-    
+
     def __init__(
         self, server_config: MCPServerConfig, tool_prefix: Optional[str] = None
     ):
         """
         Initialize MCP tool adapter.
-        
+
         Args:
             server_config: Configuration for the MCP server
             tool_prefix: Optional prefix for tool names (e.g., "mcp_fs_")
@@ -756,72 +767,74 @@ class MCPToolAdapter:
         self.client: Optional[MCPClient] = None
         self._tools_cache: List[FunctionTool] = []
         self._connected = False
-    
+
     async def connect(self) -> None:
         """Connect to the MCP server and load tools."""
         if self._connected:
             return
-        
+
         try:
             self.client = self.server_config.create_client()
             await self.client.connect()
             self._connected = True
-            
+
             # Load and convert tools
             await self._load_tools()
-            
+
             logger.info(
                 f"Connected to MCP server '{self.server_config.name}' with {len(self._tools_cache)} tools"
             )
-            
+
         except Exception as e:
             logger.error(
                 f"Failed to connect to MCP server '{self.server_config.name}': {e}"
             )
             raise
-    
+
     async def disconnect(self) -> None:
         """Disconnect from the MCP server."""
         if self.client:
             try:
                 await self.client.disconnect()
             except Exception as e:
-                logger.warning(f"Error disconnecting MCP client for '{self.server_config.name}': {e}")
+                logger.warning(
+                    f"Error disconnecting MCP client for '{self.server_config.name}': {e}"
+                )
             finally:
                 self.client = None
                 self._connected = False
                 self._tools_cache.clear()
                 # Give a moment for connections to close
                 await asyncio.sleep(0.1)
-    
+
     async def _load_tools(self) -> None:
         """Load MCP tools and convert them to Opper Agent tools."""
         if not self.client:
             return
-        
+
         mcp_tools = self.client.get_tools()
         self._tools_cache = []
-        
+
         for mcp_tool in mcp_tools:
             try:
                 agent_tool = self._convert_mcp_tool(mcp_tool)
                 self._tools_cache.append(agent_tool)
             except Exception as e:
                 logger.warning(f"Failed to convert MCP tool '{mcp_tool.name}': {e}")
-    
+
     def _convert_mcp_tool(self, mcp_tool: MCPToolSchema) -> FunctionTool:
         """Convert an MCP tool schema to an Opper Agent tool."""
         # Create Pydantic model from MCP input schema
         input_model = self._create_pydantic_model_from_schema(
             mcp_tool.inputSchema, f"{mcp_tool.name.title()}Input"
         )
-        
+
         # Create tool function (synchronous wrapper around async MCP call)
         def tool_function(**kwargs) -> Dict[str, Any]:
             try:
                 # Validate input using Pydantic model
                 validated_input = input_model(**kwargs)
-                
+
                 # Create a fresh MCP client for each call to avoid event loop issues
                 async def _async_call():
                     client = self.server_config.create_client()
@@ -829,15 +842,19 @@ class MCPToolAdapter:
                         await client.connect()
                         # Handle parameters based on the model structure
                         input_data = validated_input.model_dump()
-                        
+
                         # If the model has a 'params' field, extract it
-                        if 'params' in input_data and isinstance(input_data['params'], dict):
-                            params = input_data['params']
+                        if "params" in input_data and isinstance(
+                            input_data["params"], dict
+                        ):
+                            params = input_data["params"]
                         else:
                             # If no params field, wrap the input data in params
                             params = {"params": input_data}
-                        
-                        logger.debug(f"Calling MCP tool '{mcp_tool.name}' with parameters: {params}")
+
+                        logger.debug(
+                            f"Calling MCP tool '{mcp_tool.name}' with parameters: {params}"
+                        )
                         result = await client.call_tool(mcp_tool.name, params)
                         logger.debug(f"MCP tool '{mcp_tool.name}' returned: {result}")
                         return result
@@ -847,55 +864,61 @@ class MCPToolAdapter:
                         except Exception as e:
                             logger.warning(f"Error disconnecting MCP client: {e}")
                         # Force cleanup of any remaining connections
-                        if hasattr(client, '_session') and client._session:
+                        if hasattr(client, "_session") and client._session:
                             try:
                                 await client._session.close()
                                 # Wait a bit for connections to close
                                 await asyncio.sleep(0.1)
                             except Exception:
                                 pass
-                
+
                 # Check if we're in an event loop
                 try:
                     loop = asyncio.get_running_loop()
                     # We're in an event loop, need to use a different approach
                     import concurrent.futures
+
                     with concurrent.futures.ThreadPoolExecutor() as executor:
                         future = executor.submit(asyncio.run, _async_call())
                         result = future.result()
                 except RuntimeError:
                     # No event loop running, safe to use asyncio.run
                     result = asyncio.run(_async_call())
-                
+
                 # Ensure proper cleanup of any remaining connections
                 import gc
+
                 gc.collect()
-                
+
                 return result
-                
+
             except Exception as e:
                 error_msg = f"MCP tool '{mcp_tool.name}' execution failed: {e}"
                 logger.error(error_msg)
                 # Add more detailed error information
                 if "The request is invalid" in str(e):
-                    logger.error(f"This might be due to incorrect parameter format or missing authentication for tool '{mcp_tool.name}'")
+                    logger.error(
+                        f"This might be due to incorrect parameter format or missing authentication for tool '{mcp_tool.name}'"
+                    )
                 elif "Unclosed client session" in str(e):
-                    logger.warning("HTTP session cleanup issue detected - this is usually not critical")
+                    logger.warning(
+                        "HTTP session cleanup issue detected - this is usually not critical"
+                    )
                 raise MCPError(f"Tool execution failed: {e}")
-        
+
         # Create FunctionTool instance
         tool_name = f"{self.tool_prefix}{mcp_tool.name}"
-        
+
         # Extract parameters from the MCP tool's input schema for better documentation
         parameters = self._extract_parameters_from_schema(mcp_tool.inputSchema)
-        
+
         return FunctionTool(
             func=tool_function,
             name=tool_name,
             description=mcp_tool.description,
             parameters=parameters,
         )
-    
+
     def _create_pydantic_model_from_schema(
         self, schema: Dict[str, Any], model_name: str
     ) -> Type[BaseModel]:
@@ -903,15 +926,15 @@ class MCPToolAdapter:
         if not schema or "properties" not in schema:
             # Return a simple model with no fields
             return create_model(model_name)
-        
+
         properties = schema["properties"]
         required_fields = set(schema.get("required", []))
-        
+
         fields = {}
         for field_name, field_schema in properties.items():
             field_type = self._json_schema_to_python_type(field_schema)
             field_description = field_schema.get("description", "")
-            
+
             if field_name in required_fields:
                 fields[field_name] = (field_type, Field(description=field_description))
             else:
@@ -919,7 +942,7 @@ class MCPToolAdapter:
                     Optional[field_type],
                     Field(default=None, description=field_description),
                 )
-        
+
         # Special handling for MCP tools that expect a 'params' field
         # If the schema has a 'params' field, we need to create a wrapper model
         if "params" in properties:
@@ -930,41 +953,48 @@ class MCPToolAdapter:
                 inner_fields = {}
                 inner_properties = params_schema["properties"]
                 inner_required = set(params_schema.get("required", []))
-                
+
                 for inner_field_name, inner_field_schema in inner_properties.items():
-                    inner_field_type = self._json_schema_to_python_type(inner_field_schema)
+                    inner_field_type = self._json_schema_to_python_type(
+                        inner_field_schema
+                    )
                     inner_field_description = inner_field_schema.get("description", "")
-                    
+
                     if inner_field_name in inner_required:
-                        inner_fields[inner_field_name] = (inner_field_type, Field(description=inner_field_description))
+                        inner_fields[inner_field_name] = (
+                            inner_field_type,
+                            Field(description=inner_field_description),
+                        )
                     else:
                         inner_fields[inner_field_name] = (
                             Optional[inner_field_type],
                             Field(default=None, description=inner_field_description),
                         )
-                
+
                 # Create the inner model
                 inner_model = create_model(f"{model_name}Params", **inner_fields)
-                
+
                 # Create the wrapper model with params field
-                wrapper_fields = {"params": (inner_model, Field(description="Tool parameters"))}
+                wrapper_fields = {
+                    "params": (inner_model, Field(description="Tool parameters"))
+                }
                 return create_model(model_name, **wrapper_fields)
-        
+
         return create_model(model_name, **fields)
-    
+
     def _extract_parameters_from_schema(self, schema: Dict[str, Any]) -> Dict[str, str]:
         """Extract parameters from MCP tool input schema for FunctionTool."""
         if not schema or "properties" not in schema:
             return {}
-        
+
         parameters = {}
         properties = schema["properties"]
         required_fields = set(schema.get("required", []))
-        
+
         for field_name, field_schema in properties.items():
             # Get field description
             description = field_schema.get("description", f"Parameter {field_name}")
-            
+
             # Get field type information
             field_type = field_schema.get("type", "string")
             if field_type == "array":
@@ -980,37 +1010,41 @@ class MCPToolAdapter:
                     type_info = "object"
             else:
                 type_info = field_type
-            
+
             # Add required indicator
-            required_indicator = " (required)" if field_name in required_fields else " (optional)"
-            
+            required_indicator = (
+                " (required)" if field_name in required_fields else " (optional)"
+            )
+
             # Combine description with type info
             full_description = f"{description} - Type: {type_info}{required_indicator}"
-            
+
             parameters[field_name] = full_description
-        
+
         return parameters
-    
+
     def _extract_nested_object_properties(self, object_schema: Dict[str, Any]) -> str:
         """Extract property names from a nested object schema for documentation."""
         if not object_schema or "properties" not in object_schema:
             return ""
-        
+
         properties = object_schema["properties"]
         required_fields = set(object_schema.get("required", []))
-        
+
         prop_descriptions = []
         for prop_name, prop_schema in properties.items():
             prop_type = prop_schema.get("type", "string")
-            required_marker = " (required)" if prop_name in required_fields else " (optional)"
+            required_marker = (
+                " (required)" if prop_name in required_fields else " (optional)"
+            )
             prop_descriptions.append(f"{prop_name}: {prop_type}{required_marker}")
-        
+
         return ", ".join(prop_descriptions)
-    
+
     def _json_schema_to_python_type(self, schema: Dict[str, Any]) -> type:
         """Convert JSON schema type to Python type."""
         schema_type = schema.get("type", "string")
-        
+
         if schema_type == "string":
             return str
         elif schema_type == "integer":
@@ -1030,16 +1064,16 @@ class MCPToolAdapter:
             return Dict[str, Any]
         else:
             return Any
-    
+
     def get_tools(self) -> List[FunctionTool]:
         """Get list of converted Opper Agent tools."""
         return self._tools_cache.copy()
-    
+
     async def __aenter__(self):
         """Async context manager entry."""
         await self.connect()
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
         await self.disconnect()
@@ -1048,45 +1082,45 @@ class MCPToolAdapter:
 class MCPToolManager:
     """
     Manager for multiple MCP tool adapters.
-    
+
     This class helps manage multiple MCP servers and their tools,
     providing a unified interface for the Opper Agent system.
     """
-    
+
     def __init__(self):
         """Initialize MCP tool manager."""
         self.adapters: Dict[str, MCPToolAdapter] = {}
         self._all_tools: List[FunctionTool] = []
-    
+
     def add_server(
         self, server_config: MCPServerConfig, tool_prefix: Optional[str] = None
     ) -> MCPToolAdapter:
         """
         Add an MCP server to the manager.
-        
+
         Args:
             server_config: Configuration for the MCP server
             tool_prefix: Optional prefix for tool names
-            
+
         Returns:
             The created MCP tool adapter
         """
         if server_config.name in self.adapters:
             raise ValueError(f"MCP server '{server_config.name}' already added")
-        
+
         adapter = MCPToolAdapter(server_config, tool_prefix)
         self.adapters[server_config.name] = adapter
         return adapter
-    
+
     async def connect_all(self) -> None:
         """Connect to all MCP servers."""
         tasks = []
         for adapter in self.adapters.values():
             tasks.append(adapter.connect())
-        
+
         # Connect to all servers concurrently
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         # Log any connection failures
         for i, result in enumerate(results):
             if isinstance(result, Exception):
@@ -1094,63 +1128,65 @@ class MCPToolManager:
                 logger.error(
                     f"Failed to connect to MCP server '{server_name}': {result}"
                 )
-        
+
         # Update tools cache
         await self._update_tools_cache()
-    
+
     async def disconnect_all(self) -> None:
         """Disconnect from all MCP servers."""
         tasks = []
         for adapter in self.adapters.values():
             tasks.append(adapter.disconnect())
-        
+
         await asyncio.gather(*tasks, return_exceptions=True)
         self._all_tools.clear()
-    
+
     async def _update_tools_cache(self) -> None:
         """Update the cache of all available tools."""
         self._all_tools = []
         for adapter in self.adapters.values():
             if adapter._connected:
                 self._all_tools.extend(adapter.get_tools())
-    
+
     def get_all_tools(self) -> List[FunctionTool]:
         """Get all tools from all connected MCP servers."""
         return self._all_tools.copy()
-    
+
     def get_server_tools(self, server_name: str) -> List[FunctionTool]:
         """Get tools from a specific MCP server."""
         if server_name not in self.adapters:
             raise ValueError(f"MCP server '{server_name}' not found")
-        
+
         return self.adapters[server_name].get_tools()
-    
+
     async def disconnect_all(self) -> None:
         """Disconnect from all MCP servers."""
         tasks = []
         for adapter in self.adapters.values():
             tasks.append(adapter.disconnect())
-        
+
         # Disconnect from all servers concurrently
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         # Log any disconnection failures
         for i, result in enumerate(results):
             if isinstance(result, Exception):
                 server_name = list(self.adapters.keys())[i]
-                logger.warning(f"Failed to disconnect from MCP server '{server_name}': {result}")
-        
+                logger.warning(
+                    f"Failed to disconnect from MCP server '{server_name}': {result}"
+                )
+
         # Clear tools cache
         self._all_tools.clear()
-        
+
         # Give a moment for all connections to close
         await asyncio.sleep(0.1)
-    
+
     async def __aenter__(self):
         """Async context manager entry."""
         await self.connect_all()
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
         await self.disconnect_all()
@@ -1160,21 +1196,22 @@ class MCPToolManager:
 # High-level Helper Functions
 # ============================================================================
 
+
 def create_mcp_tools(
     server_configs: List[MCPServerConfig],
 ) -> Callable[[], List[FunctionTool]]:
     """
     Create a function that returns MCP tools for use with Opper Agent.
-    
+
     This is a helper function that creates and manages MCP connections
     and returns tools in a format compatible with the Agent constructor.
-    
+
     Args:
         server_configs: List of MCP server configurations
-        
+
     Returns:
         Function that returns list of MCP tools
-        
+
     Example:
         >>> from opper_agent import Agent
         >>> from opper_agent.mcp import create_mcp_tools, MCPServerConfig
@@ -1197,11 +1234,11 @@ def create_mcp_tools(
         ... )
     """
     manager = MCPToolManager()
-    
+
     # Add all server configurations
     for config in server_configs:
         manager.add_server(config)
-    
+
     def get_tools() -> List[FunctionTool]:
         """Get MCP tools (synchronous wrapper)."""
         # This is a bit tricky since we need async operations
@@ -1213,7 +1250,7 @@ def create_mcp_tools(
                 # We'll create a task and wait for it to complete
                 import concurrent.futures
                 import threading
-                
+
                 def run_in_thread():
                     new_loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(new_loop)
@@ -1221,7 +1258,7 @@ def create_mcp_tools(
                         return new_loop.run_until_complete(_async_get_tools())
                     finally:
                         new_loop.close()
-                
+
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future = executor.submit(run_in_thread)
                     return future.result(timeout=30)  # 30 second timeout
@@ -1230,13 +1267,13 @@ def create_mcp_tools(
         except RuntimeError:
             # No event loop, create one
             return asyncio.run(_async_get_tools())
-    
+
     async def _async_get_tools() -> List[FunctionTool]:
         """Async version of get_tools."""
         # Connect to all servers and keep connections alive
         await manager.connect_all()
         return manager.get_all_tools()
-    
+
     return get_tools
 
 
@@ -1245,15 +1282,15 @@ async def create_mcp_tools_async(
 ) -> List[FunctionTool]:
     """
     Create MCP tools asynchronously for use with Opper Agent.
-    
+
     This is the async version that should be used when already in an event loop.
-    
+
     Args:
         server_configs: List of MCP server configurations
-        
+
     Returns:
         List of MCP tools
-        
+
     Example:
         >>> import asyncio
         >>> from opper_agent.mcp import create_mcp_tools_async, MCPServerConfig
@@ -1271,11 +1308,11 @@ async def create_mcp_tools_async(
         >>> tools = asyncio.run(main())
     """
     manager = MCPToolManager()
-    
+
     # Add all server configurations
     for config in server_configs:
         manager.add_server(config)
-    
+
     # Connect to all servers and keep connections alive
     await manager.connect_all()
     return manager.get_all_tools()
@@ -1285,10 +1322,10 @@ async def create_mcp_tools_async(
 def mcp_tools(*server_configs: MCPServerConfig):
     """
     Decorator to add MCP tools to an agent.
-    
+
     Args:
         *server_configs: MCP server configurations
-        
+
     Example:
         >>> from opper_agent import Agent
         >>> from opper_agent.mcp import mcp_tools, MCPServerConfig
@@ -1309,26 +1346,26 @@ def mcp_tools(*server_configs: MCPServerConfig):
         ...             description="Agent with access to Gmail"
         ...         )
     """
-    
+
     def decorator(agent_class):
         original_init = agent_class.__init__
-        
+
         def new_init(self, *args, **kwargs):
             # Get MCP tools
             mcp_tool_list = create_mcp_tools(list(server_configs))()
-            
+
             # Add to existing tools if any
             existing_tools = kwargs.get("tools", [])
             if existing_tools:
                 kwargs["tools"] = existing_tools + mcp_tool_list
             else:
                 kwargs["tools"] = mcp_tool_list
-            
+
             original_init(self, *args, **kwargs)
-        
+
         agent_class.__init__ = new_init
         return agent_class
-    
+
     return decorator
 
 
@@ -1336,9 +1373,10 @@ def mcp_tools(*server_configs: MCPServerConfig):
 # Pre-configured MCP Servers
 # ============================================================================
 
+
 class MCPServers:
     """Pre-configured MCP server configurations for common tools."""
-    
+
     @staticmethod
     def filesystem(path: str = "/tmp") -> MCPServerConfig:
         """Filesystem MCP server for file operations."""
@@ -1347,7 +1385,7 @@ class MCPServers:
             command="npx",
             args=["-y", "@modelcontextprotocol/server-filesystem", path],
         )
-    
+
     @staticmethod
     def git(repository_path: str = ".") -> MCPServerConfig:
         """Git MCP server for Git operations."""
@@ -1356,7 +1394,7 @@ class MCPServers:
             command="npx",
             args=["-y", "@modelcontextprotocol/server-git", repository_path],
         )
-    
+
     @staticmethod
     def sqlite(db_path: str) -> MCPServerConfig:
         """SQLite MCP server for database operations."""
@@ -1365,7 +1403,7 @@ class MCPServers:
             command="npx",
             args=["-y", "@modelcontextprotocol/server-sqlite", db_path],
         )
-    
+
     @staticmethod
     def web_search(api_key: Optional[str] = None) -> MCPServerConfig:
         """Web search MCP server."""

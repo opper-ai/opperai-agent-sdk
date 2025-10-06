@@ -2,7 +2,16 @@ from .base_agent import Agent, tool, hook, AgentHooks, RunContext, Usage, Functi
 
 # MCP support (optional import to avoid breaking existing code)
 try:
-    from .mcp import MCPClient, MCPServerConfig, MCPServers, MCPToolAdapter, MCPToolManager, create_mcp_tools, create_mcp_tools_async, mcp_tools
+    from .mcp import (
+        MCPClient,
+        MCPServerConfig,
+        MCPServers,
+        MCPToolAdapter,
+        MCPToolManager,
+        create_mcp_tools,
+        create_mcp_tools_async,
+        mcp_tools,
+    )
 
     _MCP_AVAILABLE = True
 except ImportError:
@@ -21,7 +30,7 @@ __all__ = [
     "tool",
     "hook",
     "AgentHooks",
-    "RunContext", 
+    "RunContext",
     "Usage",
     "FunctionTool",
 ]
