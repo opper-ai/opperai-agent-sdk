@@ -436,11 +436,20 @@ class Thought(BaseModel):
         default=[],
         description="Tools to call (empty if task complete)"
     )
+    user_message: str = Field(
+        default="Working on it...",
+        description="Status update for user"
+    )
+
+    # Memory control fields (optional, only used when memory enabled)
+    memory_reads: List[str] = Field(
+        default_factory=list,
+        description="Memory keys to load for next iteration"
+    )
     memory_updates: Dict[str, Dict[str, Any]] = Field(
         default_factory=dict,
-        description="Keyed updates the agent wants to persist to memory"
+        description="Memory writes (key -> {value, description, metadata})"
     )
-    user_message: str = Field(description="Status update for user")
 ```
 
 ### 2.3 Execution Cycle
@@ -461,133 +470,113 @@ class ExecutionCycle(BaseModel):
 
 ### 3.1 Memory System
 
+> **NOTE (To be reviewed in future):** The memory implementation diverged from this spec to use a **simpler LLM-driven approach**. The LLM directly controls memory reads/writes through the Thought schema instead of using a separate "memory router" call.
+
+#### Actual Implementation
+
+The memory system uses a **catalog-based approach** where the LLM sees available memory and directly requests what it needs:
+
+**Memory Core (matches spec):**
+
 ```python
 class MemoryEntry(BaseModel):
     """Metadata + payload for a single memory slot."""
-
     key: str
     description: str
     value: Any
     metadata: Dict[str, Any] = Field(default_factory=dict)
     last_accessed: float = Field(default_factory=time.time)
 
-
 class Memory(BaseModel):
-    """
-    Fast memory system for agents.
-    Stores MemoryEntry objects and surfaces a lightweight catalog to the LLM.
-    """
-
+    """Fast memory system - stores entries and provides catalog."""
     store: Dict[str, MemoryEntry] = Field(default_factory=dict)
 
     def has_entries(self) -> bool:
         return len(self.store) > 0
 
     async def list_entries(self) -> List[Dict[str, Any]]:
-        """
-        Return summaries so model can decide what to load.
-        Each summary includes key, description, and optional tags/metadata.
-        """
-        catalog = []
-        for entry in self.store.values():
-            catalog.append(
-                {
-                    "key": entry.key,
-                    "description": entry.description,
-                    "metadata": entry.metadata,
-                }
-            )
-        return catalog
+        """Return catalog (keys + descriptions) for LLM to see."""
+        # Returns [{"key": ..., "description": ..., "metadata": ...}]
 
     async def read(self, keys: Optional[List[str]] = None) -> Dict[str, Any]:
-        """Read specific memory entries (or all when keys is None)."""
-        if not keys:
-            keys = list(self.store.keys())
-        payload = {}
-        for key in keys:
-            if key in self.store:
-                entry = self.store[key]
-                entry.last_accessed = time.time()
-                payload[key] = entry.value
-        return payload
+        """Load specific keys or all if None."""
 
-    async def write(
-        self,
-        key: str,
-        value: Any,
-        description: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Write/update memory and keep catalog metadata fresh."""
-        if key in self.store:
-            entry = self.store[key]
-            entry.value = value
-            if description:
-                entry.description = description
-            if metadata:
-                entry.metadata.update(metadata)
-            entry.last_accessed = time.time()
-        else:
-            self.store[key] = MemoryEntry(
-                key=key,
-                description=description or key,
-                value=value,
-                metadata=metadata or {},
-            )
+    async def write(self, key: str, value: Any, ...) -> None:
+        """Insert or update memory entry."""
 
     async def clear(self) -> None:
-        """Clear memory."""
-        self.store.clear()
+        """Clear all memory."""
 ```
 
-#### Memory Integration
+**Thought Schema Extension:**
+
 ```python
-class MemoryDecision(BaseModel):
-    should_use_memory: bool
-    selected_keys: List[str] = []
-    rationale: str
+class Thought(BaseModel):
+    """Agent's reasoning and action plan."""
+    reasoning: str
+    tool_calls: List[ToolCall] = []
+    user_message: str = "Working on it..."
 
-
-async def _prepare_memory_snapshot(self, goal: Any) -> Optional[Dict[str, Any]]:
-    """
-    Lightweight LLM call that lets the model opt-in to loading memory.
-    Returns hydrated entries or None when memory is skipped.
-    """
-
-    catalog = await self.context.memory.list_entries()
-    decision_response = await self.opper.call(
-        name="memory_router",
-        instructions=self._memory_router_instructions(),
-        input={
-            "goal": str(goal),
-            "memory_catalog": catalog,
-            "recent_history": self.context.get_last_iterations_summary(2),
-        },
-        output_schema=MemoryDecision,
-        model=self.model,
-        parent_span_id=self.context.trace_id,
+    # Memory control fields (NEW)
+    memory_reads: List[str] = Field(
+        default_factory=list,
+        description="Memory keys to load for next iteration"
     )
-
-    decision = MemoryDecision(**decision_response.json_payload)
-    if not decision.should_use_memory or not decision.selected_keys:
-        return None
-
-    return await self.context.memory.read(decision.selected_keys)
-
-
-def _memory_router_instructions(self) -> str:
-    return """Decide if any memory should be loaded for the next reasoning step.
-- Return should_use_memory=true only when a listed memory clearly helps.
-- selected_keys must only contain keys from memory_catalog.
-- Keep rationale concise.
-"""
-
-
-# After tool execution: optionally update memory
-if self.context.memory and thought.memory_updates:
-    for key, update in thought.memory_updates.items():
-        await self.context.memory.write(**update)
+    memory_updates: Dict[str, Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Memory writes (key -> {value, description, metadata})"
+    )
 ```
+
+**Agent Integration:**
+
+```python
+# In _think() - provide memory catalog
+context = {
+    # ... other fields
+    "memory_catalog": await self.context.memory.list_entries(),  # Show what's available
+    "loaded_memory": self.context.metadata.get("current_memory"),  # Show what was loaded
+}
+
+# In _run_loop() - handle memory reads
+if thought.memory_reads:
+    memory_data = await self.context.memory.read(thought.memory_reads)
+    self.context.metadata["current_memory"] = memory_data
+    # Create span for tracking
+
+# In _run_loop() - handle memory writes
+if thought.memory_updates:
+    for key, update in thought.memory_updates.items():
+        await self.context.memory.write(key=key, **update)
+    # Create span for tracking
+
+# Exit condition includes memory reads
+has_memory_reads = thought.memory_reads and len(thought.memory_reads) > 0
+if not has_tool_calls and not has_memory_reads:
+    break  # Done
+```
+
+**Key Differences from Original Spec:**
+
+1. **No separate MemoryDecision or memory router call** - LLM controls memory directly
+2. **No _prepare_memory_snapshot()** - Memory catalog always provided to LLM
+3. **Memory reads extend iterations** - Agent continues if memory_reads present
+4. **Simpler flow** - One LLM call decides reasoning, tools, AND memory
+5. **More transparent** - Memory operations visible in Thought schema
+
+**Benefits of Actual Implementation:**
+
+- Fewer LLM calls (no separate router call)
+- More flexible (LLM can read/write in same step)
+- More transparent (memory ops visible in traces)
+- Simpler code (no router logic needed)
+
+**Future Review Questions:**
+
+- Should we add the "memory router" pattern back for more selective loading?
+- Should memory_reads and tool_calls be mutually exclusive?
+- Should loaded memory persist or be cleared between iterations?
+- Do we need memory pruning/expiration strategies?
 
 ### 3.2 Tool Result Cleaning
 

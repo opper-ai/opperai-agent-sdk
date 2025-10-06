@@ -1399,166 +1399,121 @@ Follow any instructions provided for formatting and style."""
 
 ### Task 3.3: Memory System
 
-**Implementation:**
+> **NOTE (To be reviewed in future):** The memory system was implemented with a **simpler LLM-driven approach** instead of the planned "memory router" pattern. The LLM directly requests memory reads/writes through the Thought schema, making it more flexible and transparent.
+
+**Actual Implementation:**
+
+The memory system uses a catalog-based approach where:
+1. The LLM sees a **memory catalog** (keys + descriptions) in context
+2. The LLM **requests specific keys** via `Thought.memory_reads` field
+3. Requested memory is **loaded into context** for the next iteration
+4. The LLM **writes memory** via `Thought.memory_updates` field
+
+**Memory Core (`src/opper_agent/memory/memory.py`):**
 
 ```python
-# src/opper_agent/memory/memory.py
-from __future__ import annotations
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
-import time
-
+# Implementation matches the planned version (no changes needed)
 class MemoryEntry(BaseModel):
     """Single memory slot with metadata."""
-
     key: str
     description: str
     value: Any
     metadata: Dict[str, Any] = Field(default_factory=dict)
     last_accessed: float = Field(default_factory=time.time)
 
-
 class Memory(BaseModel):
     """Fast in-memory store that exposes a catalog to the LLM."""
-
     store: Dict[str, MemoryEntry] = Field(default_factory=dict)
-
-    def has_entries(self) -> bool:
-        return len(self.store) > 0
-
-    async def list_entries(self) -> List[Dict[str, Any]]:
-        """Summaries so the LLM can decide whether to load anything."""
-        catalog: List[Dict[str, Any]] = []
-        for entry in self.store.values():
-            catalog.append(
-                {
-                    "key": entry.key,
-                    "description": entry.description,
-                    "metadata": entry.metadata,
-                }
-            )
-        return catalog
-
-    async def read(self, keys: Optional[List[str]] = None) -> Dict[str, Any]:
-        """Return payloads for the selected keys (or all when keys is None)."""
-        if not keys:
-            keys = list(self.store.keys())
-        snapshot: Dict[str, Any] = {}
-        for key in keys:
-            if key in self.store:
-                entry = self.store[key]
-                entry.last_accessed = time.time()
-                snapshot[key] = entry.value
-        return snapshot
-
-    async def write(
-        self,
-        key: str,
-        value: Any,
-        description: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Insert or update a memory entry."""
-        if key in self.store:
-            entry = self.store[key]
-            entry.value = value
-            if description:
-                entry.description = description
-            if metadata:
-                entry.metadata.update(metadata)
-            entry.last_accessed = time.time()
-        else:
-            self.store[key] = MemoryEntry(
-                key=key,
-                description=description or key,
-                value=value,
-                metadata=metadata or {},
-            )
-
-    async def clear(self) -> None:
-        """Clear all memory entries."""
-        self.store.clear()
+    # ... (methods: has_entries, list_entries, read, write, clear)
 ```
+
+**Thought Schema Extension (`src/opper_agent/core/schemas.py`):**
+
+```python
+class Thought(BaseModel):
+    """Agent's reasoning and action plan."""
+    reasoning: str
+    tool_calls: List[ToolCall] = []
+    user_message: str = "Working on it..."
+
+    # Memory fields (direct LLM control)
+    memory_reads: List[str] = Field(
+        default_factory=list,
+        description="Memory keys to load for this iteration"
+    )
+    memory_updates: Dict[str, Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Memory writes (key -> {value, description, metadata})"
+    )
+```
+
+**Agent Integration (`src/opper_agent/core/agent.py`):**
+
+```python
+# In _think() - provide memory catalog to LLM
+context = {
+    # ... other context fields
+    "memory_catalog": await self.context.memory.list_entries() if self.enable_memory else None,
+    "loaded_memory": self.context.metadata.get("current_memory", None),
+}
+
+# In _run_loop() - handle memory reads
+if self.enable_memory and thought.memory_reads:
+    memory_data = await self.context.memory.read(thought.memory_reads)
+    self.context.metadata["current_memory"] = memory_data
+    # (with proper span tracking)
+
+# In _run_loop() - handle memory writes
+if self.enable_memory and thought.memory_updates:
+    for key, update in thought.memory_updates.items():
+        await self.context.memory.write(
+            key=key,
+            value=update.get("value"),
+            description=update.get("description"),
+            metadata=update.get("metadata"),
+        )
+    # (with proper span tracking)
+
+# Exit condition updated
+has_memory_reads = self.enable_memory and thought.memory_reads and len(thought.memory_reads) > 0
+if not has_tool_calls and not has_memory_reads:
+    break  # Done
+```
+
+**Key Differences from Original Plan:**
+
+1. **No MemoryDecision schema** - LLM controls memory directly through Thought
+2. **No _prepare_memory_snapshot() method** - Memory catalog always provided
+3. **No _memory_router_instructions()** - Instructions integrated into main think prompt
+4. **Simpler flow** - LLM decides what to read/write in the same reasoning step
+5. **Memory reads extend iteration** - Agent continues if memory_reads present (even without tool_calls)
 
 **Tests:**
 
 ```python
-# tests/unit/test_memory.py
-import pytest
-from opper_agent.memory.memory import Memory
-
+# tests/unit/test_memory.py - Basic memory tests (unchanged)
 @pytest.mark.asyncio
 async def test_memory_read_write():
     memory = Memory()
     await memory.write("project", {"status": "in_progress"}, description="Project snapshot")
-
     catalog = await memory.list_entries()
     assert catalog[0]["key"] == "project"
-
     payload = await memory.read(["project"])
     assert payload["project"]["status"] == "in_progress"
+
+# Additional integration tests needed for:
+# - LLM requesting memory reads through Thought.memory_reads
+# - LLM writing memory through Thought.memory_updates
+# - Memory persisting across iterations
+# - Span tracking for memory operations
 ```
 
-### Task 3.4: Memory Router Helpers
+**Future Review Topics:**
 
-**Implementation:**
-
-```python
-# src/opper_agent/core/schemas.py (append below Thought)
-class MemoryDecision(BaseModel):
-    """Structure returned by the memory router LLM call."""
-
-    should_use_memory: bool = Field(description="Whether memory should be loaded")
-    selected_keys: List[str] = Field(default_factory=list, description="Keys to load")
-    rationale: str = Field(description="Short reason for the decision")
-```
-
-```python
-# src/opper_agent/core/agent.py (inside Agent)
-    async def _prepare_memory_snapshot(self, goal: Any) -> Optional[Dict[str, Any]]:
-        """Let the LLM decide whether to hydrate memory before think."""
-
-        catalog = await self.context.memory.list_entries()
-        if not catalog:
-            return None
-
-        response = await self.opper.call(
-            name="memory_router",
-            instructions=self._memory_router_instructions(),
-            input={
-                "goal": str(goal),
-                "memory_catalog": catalog,
-                "recent_history": self.context.get_last_iterations_summary(2),
-            },
-            output_schema=MemoryDecision,
-            model=self.model,
-            parent_span_id=self.context.trace_id,
-        )
-
-        decision = MemoryDecision(**response.json_payload)
-        if not decision.should_use_memory or not decision.selected_keys:
-            return None
-
-        return await self.context.memory.read(decision.selected_keys)
-
-    def _memory_router_instructions(self) -> str:
-        return """Decide if any memory entries should be loaded for the next reasoning step.
-- Only set should_use_memory=true when an entry clearly helps.
-- selected_keys must come from memory_catalog.
-- Keep the rationale concise."""
-```
-
-```python
-# src/opper_agent/core/agent.py (_run_loop memory updates)
-            if self.enable_memory and thought.memory_updates:
-                for key, update in thought.memory_updates.items():
-                    await self.context.memory.write(
-                        key=key,
-                        value=update.get("value"),
-                        description=update.get("description"),
-                        metadata=update.get("metadata"),
-                    )
-```
+- Should we add back the "memory router" pattern for more selective loading?
+- Should memory_reads and tool_calls be mutually exclusive?
+- Should loaded memory be cleared between iterations or persist?
+- Should we add memory pruning/expiration strategies?
 
 ### Task 4.1: MCP Tool Provider
 
