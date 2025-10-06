@@ -13,23 +13,24 @@ Main exports:
 # Version
 __version__ = "0.1.0"
 
-# Core exports (will be populated as we implement)
-# from .core.agent import Agent
-# from .agents.react import ReactAgent
-# from .utils.decorators import tool, hook
-# from .base.context import AgentContext
-# from .memory.memory import Memory
-# from .mcp.provider import mcp
-# from .mcp.config import MCPServerConfig
+# Core exports
+from .core.agent import Agent
+from .utils.decorators import tool, hook
+from .base.context import AgentContext
+from .memory.memory import Memory
+
+# from .agents.react import ReactAgent  # Phase 4
+# from .mcp.provider import mcp  # Phase 4
+# from .mcp.config import MCPServerConfig  # Phase 4
 
 __all__ = [
     "__version__",
-    # "Agent",
+    "Agent",
+    "tool",
+    "hook",
+    "AgentContext",
+    "Memory",
     # "ReactAgent",
-    # "tool",
-    # "hook",
-    # "AgentContext",
-    # "Memory",
     # "mcp",
     # "MCPServerConfig",
 ]
