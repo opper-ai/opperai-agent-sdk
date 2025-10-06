@@ -5,7 +5,7 @@ Tests the Pydantic models used for agent reasoning and tool execution.
 """
 
 import pytest
-from opper_agent.core.schemas import ToolCall, Thought, MemoryDecision
+from opper_agent.core.schemas import ToolCall, Thought
 
 
 def test_tool_call_creation():
@@ -86,33 +86,21 @@ def test_thought_with_memory_updates():
     assert thought.memory_updates["project_status"]["value"]["status"] == "in_progress"
 
 
-def test_memory_decision_creation():
-    """Test MemoryDecision model creation."""
-    decision = MemoryDecision(
-        should_use_memory=True,
-        selected_keys=["key1", "key2"],
-        rationale="These keys are relevant to current task",
+def test_thought_with_memory_reads():
+    """Test Thought with memory reads."""
+    thought = Thought(
+        reasoning="Loading from memory",
+        memory_reads=["project_status", "user_preferences"],
+        tool_calls=[],
     )
 
-    assert decision.should_use_memory is True
-    assert len(decision.selected_keys) == 2
-    assert "key1" in decision.selected_keys
-    assert "relevant" in decision.rationale
+    assert len(thought.memory_reads) == 2
+    assert "project_status" in thought.memory_reads
+    assert "user_preferences" in thought.memory_reads
 
 
-def test_memory_decision_no_memory():
-    """Test MemoryDecision when memory should not be used."""
-    decision = MemoryDecision(
-        should_use_memory=False, selected_keys=[], rationale="No relevant memory"
-    )
+def test_thought_memory_reads_default():
+    """Test Thought with default empty memory_reads."""
+    thought = Thought(reasoning="No memory needed")
 
-    assert decision.should_use_memory is False
-    assert len(decision.selected_keys) == 0
-
-
-def test_memory_decision_default_keys():
-    """Test MemoryDecision with default empty keys."""
-    decision = MemoryDecision(should_use_memory=False, rationale="No memory needed")
-
-    assert decision.should_use_memory is False
-    assert decision.selected_keys == []
+    assert thought.memory_reads == []

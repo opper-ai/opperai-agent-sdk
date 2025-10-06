@@ -711,3 +711,140 @@ async def test_agent_usage_tracking(mock_opper_client):
     assert agent.context.usage.input_tokens == 300  # 100 + 120 + 80
     assert agent.context.usage.output_tokens == 100  # 50 + 30 + 20
     assert agent.context.usage.total_tokens == 400  # 150 + 150 + 100
+
+
+@pytest.mark.asyncio
+async def test_agent_with_memory_reads(mock_opper_client):
+    """Test agent writing and reading from memory."""
+    # Mock spans for tool and memory operations
+    parent_span = AsyncMock(id="parent-span-123")
+    tool_span = AsyncMock(id="tool-span-1")
+    memory_write_span = AsyncMock(id="memory-write-span-1")
+    memory_read_span = AsyncMock(id="memory-read-span-1")
+
+    mock_opper_client.spans.create_async = AsyncMock(
+        side_effect=[parent_span, tool_span, memory_write_span, memory_read_span]
+    )
+    mock_opper_client.spans.update_async = AsyncMock()
+
+    mock_opper_client.call_async = AsyncMock(
+        side_effect=[
+            # Think 1: Use a tool first (to continue loop)
+            AsyncMock(
+                json_payload={
+                    "reasoning": "Need to calculate and save",
+                    "tool_calls": [
+                        {
+                            "name": "add",
+                            "parameters": {"a": 500, "b": 500},
+                            "reasoning": "Calculate",
+                        }
+                    ],
+                    "user_message": "Calculating...",
+                    "memory_reads": [],
+                    "memory_updates": {
+                        "budget": {
+                            "value": 1000,
+                            "description": "Total budget",
+                        }
+                    },
+                }
+            ),
+            # Think 2: Read from memory (loop continues because of memory_reads)
+            AsyncMock(
+                json_payload={
+                    "reasoning": "Need to retrieve budget from memory",
+                    "tool_calls": [],
+                    "user_message": "Loading...",
+                    "memory_reads": ["budget"],
+                    "memory_updates": {},
+                }
+            ),
+            # Think 3: Use loaded memory, task complete
+            AsyncMock(
+                json_payload={
+                    "reasoning": "Budget loaded, task complete",
+                    "tool_calls": [],
+                    "user_message": "Done",
+                    "memory_reads": [],
+                    "memory_updates": {},
+                }
+            ),
+            # Generate result
+            AsyncMock(message="Budget is 1000"),
+        ]
+    )
+
+    agent = Agent(
+        name="MemoryAgent",
+        tools=[add],  # Add the tool for the first iteration
+        enable_memory=True,
+        verbose=False,
+        opper_api_key="test-key",
+    )
+    result = await agent.process("Check budget")
+
+    # Verify memory was written
+    assert agent.context.memory.has_entries()
+    memory_data = await agent.context.memory.read(["budget"])
+    assert memory_data["budget"] == 1000
+
+    # Verify the loop continued through all 3 iterations as expected
+    assert mock_opper_client.call_async.call_count == 4  # 3 thinks + 1 final
+
+
+@pytest.mark.asyncio
+async def test_agent_memory_loop_continuation(mock_opper_client):
+    """Test that loop continues when memory_reads are present even with no tool_calls."""
+    parent_span = AsyncMock(id="parent-span-123")
+    memory_write_span = AsyncMock(id="memory-write-span-1")
+    memory_read_span = AsyncMock(id="memory-read-span-1")
+
+    mock_opper_client.spans.create_async = AsyncMock(
+        side_effect=[parent_span, memory_write_span, memory_read_span]
+    )
+    mock_opper_client.spans.update_async = AsyncMock()
+
+    mock_opper_client.call_async = AsyncMock(
+        side_effect=[
+            # Iteration 1: Write to memory AND signal intent to read (continues loop)
+            AsyncMock(
+                json_payload={
+                    "reasoning": "Storing value and need to read it back",
+                    "tool_calls": [],  # No tool calls
+                    "user_message": "Saving...",
+                    "memory_reads": ["key"],  # Signal to read on next iteration
+                    "memory_updates": {"key": {"value": "data", "description": "Data"}},
+                }
+            ),
+            # Iteration 2: Read from memory is done, now complete
+            AsyncMock(
+                json_payload={
+                    "reasoning": "Data loaded from memory, task complete",
+                    "tool_calls": [],  # No tool calls
+                    "user_message": "Done",
+                    "memory_reads": [],  # No more reads needed
+                    "memory_updates": {},
+                }
+            ),
+            # Generate result
+            AsyncMock(message="Complete"),
+        ]
+    )
+
+    agent = Agent(
+        name="MemoryAgent",
+        tools=[],
+        enable_memory=True,
+        verbose=True,  # Enable verbose to see what's happening
+        opper_api_key="test-key",
+    )
+    await agent.process("Test memory continuation")
+
+    # Should have 2 think calls (iteration 1 continues due to memory_reads)
+    assert mock_opper_client.call_async.call_count == 3  # 2 thinks + 1 final result
+
+    # Verify memory was written
+    assert agent.context.memory.has_entries()
+    memory_data = await agent.context.memory.read(["key"])
+    assert memory_data["key"] == "data"
