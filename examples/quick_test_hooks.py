@@ -135,7 +135,7 @@ async def main():
         hooks=[
             on_agent_start,
             # on_agent_end,
-        #     on_agent_error,
+            #     on_agent_error,
             # on_loop_start,
             # on_loop_end,
             # on_llm_call,
