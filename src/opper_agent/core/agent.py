@@ -197,7 +197,11 @@ class Agent(BaseAgent):
                         else str(cycle.thought)
                     ),
                     "results": [
-                        {"tool": r.tool_name, "success": r.success}
+                        {
+                            "tool": r.tool_name,
+                            "success": r.success,
+                            "result": str(r.result)
+                        }
                         for r in cycle.results
                     ],
                 }
