@@ -57,7 +57,8 @@ def get_weather(location: str) -> dict:
         "Sydney": {"date": today_date, "weather": "Clear, 25°C, strong winds"},
     }
     result = weather_data.get(
-        location, {"date": today_date, "weather": f"Weather data not available for {location}"}
+        location,
+        {"date": today_date, "weather": f"Weather data not available for {location}"},
     )
     return result
 
@@ -135,9 +136,7 @@ async def main():
     print("\n" + "=" * 50)
     print("\n--- Test Case 2: General Conversation ---")
     conversation2 = ConversationInput(
-        messages=[
-            ConversationMessage(role="user", content="Hello! How are you today?")
-        ]
+        messages=[ConversationMessage(role="user", content="Hello! How are you today?")]
     )
     result2 = await agent.process(conversation2)
     print(f"\n📤 Final Result 2:")
