@@ -129,7 +129,22 @@ class Agent(BaseAgent):
             if self.enable_memory and thought.memory_reads:
                 if self.verbose:
                     print(f"Loading memory keys: {thought.memory_reads}")
+
+                # Create span for memory read
+                memory_read_span = await self.opper.spans.create_async(
+                    name="memory_read",
+                    input=str(thought.memory_reads),
+                    parent_id=self.context.parent_span_id,
+                )
+
                 memory_data = await self.context.memory.read(thought.memory_reads)
+
+                # Update span with result
+                await self.opper.spans.update_async(
+                    span_id=memory_read_span.id,
+                    output=str(memory_data),
+                )
+
                 # Store in context metadata for access in tools or next iteration
                 self.context.metadata["current_memory"] = memory_data
                 if self.verbose:
@@ -139,6 +154,14 @@ class Agent(BaseAgent):
             if self.enable_memory and thought.memory_updates:
                 if self.verbose:
                     print(f"Writing to memory: {list(thought.memory_updates.keys())}")
+
+                # Create span for memory write
+                memory_write_span = await self.opper.spans.create_async(
+                    name="memory_write",
+                    input=str(list(thought.memory_updates.keys())),
+                    parent_id=self.context.parent_span_id,
+                )
+
                 for key, update in thought.memory_updates.items():
                     await self.context.memory.write(
                         key=key,
@@ -146,6 +169,12 @@ class Agent(BaseAgent):
                         description=update.get("description"),
                         metadata=update.get("metadata"),
                     )
+
+                # Update span with success
+                await self.opper.spans.update_async(
+                    span_id=memory_write_span.id,
+                    output=f"Successfully wrote {len(thought.memory_updates)} keys",
+                )
 
             # Check if done - exit only when there are NO tool calls AND NO memory reads
             has_tool_calls = thought.tool_calls and len(thought.tool_calls) > 0
