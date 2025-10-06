@@ -32,15 +32,11 @@ class Thought(BaseModel):
     user_message: str = Field(
         default="Working on it...", description="Status message for user"
     )
+    memory_reads: List[str] = Field(
+        default_factory=list,
+        description="Memory keys to load for this iteration (optional)",
+    )
     memory_updates: Dict[str, Dict[str, Any]] = Field(
         default_factory=dict,
-        description="Memory writes the model wants to perform (key -> payload)",
+        description="Memory writes the model wants to perform (key -> payload with value, description, metadata)",
     )
-
-
-class MemoryDecision(BaseModel):
-    """Structure returned by the memory router LLM call."""
-
-    should_use_memory: bool = Field(description="Whether memory should be loaded")
-    selected_keys: List[str] = Field(default_factory=list, description="Keys to load")
-    rationale: str = Field(description="Short reason for the decision")

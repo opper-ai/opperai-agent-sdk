@@ -11,7 +11,7 @@ from ..base.context import AgentContext, ExecutionCycle
 from ..memory.memory import Memory
 from ..base.hooks import HookEvents
 from ..base.tool import ToolResult
-from .schemas import Thought, ToolCall, MemoryDecision
+from .schemas import Thought, ToolCall
 
 
 class Agent(BaseAgent):
@@ -120,9 +120,25 @@ class Agent(BaseAgent):
             if self.verbose:
                 print(f"Reasoning: {thought.reasoning}")
                 print(f"Tool calls: {len(thought.tool_calls)}")
+                if self.enable_memory and thought.memory_reads:
+                    print(
+                        f"Memory reads: {len(thought.memory_reads)} {thought.memory_reads}"
+                    )
 
-            # Update memory if needed (do this before breaking on empty tool_calls)
+            # Handle memory reads - load requested memory into context for next iteration
+            if self.enable_memory and thought.memory_reads:
+                if self.verbose:
+                    print(f"Loading memory keys: {thought.memory_reads}")
+                memory_data = await self.context.memory.read(thought.memory_reads)
+                # Store in context metadata for access in tools or next iteration
+                self.context.metadata["current_memory"] = memory_data
+                if self.verbose:
+                    print(f"Loaded memory: {memory_data}")
+
+            # Update memory if needed (do this after reads, so writes are available next iteration)
             if self.enable_memory and thought.memory_updates:
+                if self.verbose:
+                    print(f"Writing to memory: {list(thought.memory_updates.keys())}")
                 for key, update in thought.memory_updates.items():
                     await self.context.memory.write(
                         key=key,
@@ -131,11 +147,27 @@ class Agent(BaseAgent):
                         metadata=update.get("metadata"),
                     )
 
-            # Check if done
-            if not thought.tool_calls or len(thought.tool_calls) == 0:
+            # Check if done - exit only when there are NO tool calls AND NO memory reads
+            has_tool_calls = thought.tool_calls and len(thought.tool_calls) > 0
+            has_memory_reads = (
+                self.enable_memory
+                and thought.memory_reads
+                and len(thought.memory_reads) > 0
+            )
+
+            if not has_tool_calls and not has_memory_reads:
                 if self.verbose:
-                    print("No more tool calls - generating final result")
+                    print(
+                        "No more tool calls or memory reads - generating final result"
+                    )
                 break
+
+            # If only memory reads (no tool calls), continue to next iteration
+            if has_memory_reads and not has_tool_calls:
+                if self.verbose:
+                    print("Continuing to next iteration with loaded memory...")
+                iteration += 1
+                continue
 
             # Execute tool calls
             results = []
@@ -166,14 +198,14 @@ class Agent(BaseAgent):
     async def _think(self, goal: Any) -> Thought:
         """Call LLM to reason about next actions."""
 
-        # Optional: build lightweight memory snapshot for LLM
-        memory_snapshot = None
+        # Build memory catalog if memory is enabled
+        memory_catalog = None
         if (
             self.enable_memory
             and self.context.memory
             and self.context.memory.has_entries()
         ):
-            memory_snapshot = await self._prepare_memory_snapshot(goal)
+            memory_catalog = await self.context.memory.list_entries()
 
         # Build context
         context = {
@@ -209,7 +241,8 @@ class Agent(BaseAgent):
             ],
             "current_iteration": self.context.iteration + 1,
             "max_iterations": self.max_iterations,
-            "memory": memory_snapshot,
+            "memory_catalog": memory_catalog,
+            "loaded_memory": self.context.metadata.get("current_memory", None),
         }
 
         instructions = """You are in a Think-Act reasoning loop.
@@ -224,6 +257,27 @@ IMPORTANT:
 - Return empty tool_calls array when task is COMPLETE
 - Only use available tools
 - Provide clear reasoning for each decision
+"""
+
+        # Add memory instructions if enabled
+        if self.enable_memory:
+            instructions += """
+
+MEMORY SYSTEM:
+You have access to a persistent memory system that works across iterations.
+
+Memory Operations:
+1. READ: Use memory_reads field to load specific keys (e.g., ["trip_budget", "favorite_city"])
+2. WRITE: Use memory_updates field to save information for later use
+   Example: {"trip_budget": {"value": 1250.0, "description": "Total trip budget calculated"}}
+
+When to use memory:
+- Save important calculations, decisions, or user preferences
+- Load memory when you need information from earlier in the conversation
+- Check memory_catalog to see what's available before requesting keys
+- Use descriptive keys like "budget_total", "user_favorite_city", etc.
+
+The memory you write persists across all process() calls on this agent.
 """
 
         # Trigger: llm_call
@@ -358,42 +412,6 @@ Follow any instructions provided for formatting and style."""
         if self.output_schema:
             return self.output_schema(**response.json_payload)
         return response.message
-
-    async def _prepare_memory_snapshot(self, goal: Any) -> Optional[Dict[str, Any]]:
-        """Let the LLM decide whether to hydrate memory before think."""
-
-        catalog = await self.context.memory.list_entries()
-        if not catalog:
-            return None
-
-        response = await self.opper.call_async(
-            name="memory_router",
-            instructions=self._memory_router_instructions(),
-            input={
-                "goal": str(goal),
-                "memory_catalog": catalog,
-                "recent_history": self.context.get_last_iterations_summary(2),
-            },
-            output_schema=MemoryDecision,
-            model=self.model,
-            parent_span_id=self.context.parent_span_id,
-        )
-
-        # Track usage
-        self._track_usage(response)
-
-        decision = MemoryDecision(**response.json_payload)
-        if not decision.should_use_memory or not decision.selected_keys:
-            return None
-
-        return await self.context.memory.read(decision.selected_keys)
-
-    def _memory_router_instructions(self) -> str:
-        """Instructions for the memory router LLM call."""
-        return """Decide if any memory entries should be loaded for the next reasoning step.
-- Only set should_use_memory=true when an entry clearly helps.
-- selected_keys must come from memory_catalog.
-- Keep the rationale concise."""
 
     def _track_usage(self, response: Any) -> None:
         """

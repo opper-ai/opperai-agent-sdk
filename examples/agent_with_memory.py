@@ -52,21 +52,6 @@ def get_weather(city: str) -> str:
     return weather_data.get(city.lower(), f"Weather data not available for {city}")
 
 
-@tool
-def save_user_preference(key: str, value: str) -> str:
-    """
-    Save a user preference.
-
-    Args:
-        key: Preference key (e.g., "favorite_city", "preferred_unit")
-        value: Preference value
-
-    Returns:
-        Confirmation message
-    """
-    return f"Saved preference: {key} = {value}"
-
-
 async def main():
     """Run a multi-task agent example with memory."""
 
@@ -74,79 +59,35 @@ async def main():
     agent = Agent(
         name="AssistantAgent",
         description="A helpful assistant that remembers context across tasks",
-        instructions="""You are a helpful assistant with memory capabilities.
-
-MEMORY USAGE:
-- When you calculate something important, save it to memory
-- When a user mentions they like something, remember their preferences
-- Before starting a new task, check if you have relevant information in memory
-- Use memory to provide context-aware responses
-
-IMPORTANT:
-- Store calculation results with descriptive keys like "budget_total", "distance_km"
-- Store user preferences with keys like "favorite_city", "preferred_temperature_unit"
-- When asked about something you previously calculated or saved, retrieve it from memory first
-""",
-        tools=[calculate, get_weather, save_user_preference],
+        instructions="You are a helpful assistant",
+        tools=[calculate, get_weather],
         enable_memory=True,
         max_iterations=15,
         verbose=True,
     )
 
     print("=" * 70)
-    print("Multi-Task Memory Example")
+    print("Agent Memory Example - Memory Within Single Process")
     print("=" * 70)
     print()
+    print("This example shows memory working WITHIN a single process() call.")
+    print("The agent will use memory as a 'scratch pad' during multi-step tasks.")
+    print()
 
-    # Task 1: Do some calculations and remember them
-    print("🎯 TASK 1: Planning a trip budget")
+    # Task: Multi-step task that uses memory WITHIN the same process() call
+    print("🎯 TASK: Multi-step vacation planning with memory")
     print("-" * 70)
-    result1 = await agent.process(
-        """Calculate my trip budget:
-        - Flight: $450
-        - Hotel for 5 nights at $120/night
-        - Daily food budget: $80/day for 5 days
+    result = await agent.process(
+        """I'm planning a vacation to Tokyo. Please:
+        1. Calculate the base costs: Flight $800 + Hotel for 7 nights at $150/night + Food budget $100/day for 7 days
+        2. Save this as 'tokyo_base_budget' in memory with a clear description
+        3. Check the weather in Tokyo
+        4. Now retrieve the base budget from memory and add $500 for activities
+        5. Tell me the final total budget
 
-        Calculate the total and remember it as my trip budget."""
+        Important: Use memory to store the base budget after step 1, then retrieve it in step 4."""
     )
-    print(f"\n✅ Result: {result1}\n")
-
-    # Check memory state after task 1
-    if agent.context and agent.context.memory:
-        print("📝 Memory after Task 1:")
-        catalog = await agent.context.memory.list_entries()
-        for entry in catalog:
-            print(f"  - {entry['key']}: {entry['description']}")
-        print()
-
-    # Task 2: Save a preference
-    print("🎯 TASK 2: Save travel preferences")
-    print("-" * 70)
-    result2 = await agent.process(
-        "I love San Francisco! Save it as my favorite city and check the weather there."
-    )
-    print(f"\n✅ Result: {result2}\n")
-
-    # Check memory state after task 2
-    if agent.context and agent.context.memory:
-        print("📝 Memory after Task 2:")
-        catalog = await agent.context.memory.list_entries()
-        for entry in catalog:
-            print(f"  - {entry['key']}: {entry['description']}")
-        print()
-
-    # Task 3: Use memory from previous tasks (THIS IS THE KEY PART!)
-    print("🎯 TASK 3: Use information from memory")
-    print("-" * 70)
-    result3 = await agent.process(
-        """Based on what you remember about my trip budget and favorite city:
-        1. What was my total trip budget?
-        2. What's the weather like in my favorite city?
-        3. Can I add $200 for activities? What would be my new total?
-
-        Use the information you saved earlier to answer these questions."""
-    )
-    print(f"\n✅ Result: {result3}\n")
+    print(f"\n✅ Result: {result}\n")
 
     # Final memory state
     if agent.context and agent.context.memory:
@@ -157,21 +98,24 @@ IMPORTANT:
         memory_data = await agent.context.memory.read()
 
         for entry in catalog:
-            key = entry['key']
+            key = entry["key"]
             print(f"\n{key}:")
             print(f"  Description: {entry['description']}")
             print(f"  Value: {memory_data.get(key, 'N/A')}")
-            if entry.get('metadata'):
+            if entry.get("metadata"):
                 print(f"  Metadata: {entry['metadata']}")
 
     print("\n" + "=" * 70)
     print("Example Complete!")
     print("=" * 70)
     print("\nNotice how the agent:")
-    print("  1. Calculated the budget and saved it to memory")
-    print("  2. Saved your favorite city preference")
-    print("  3. Retrieved both pieces of information to answer the final questions")
-    print("\nThis demonstrates memory working across multiple agent.process() calls!")
+    print("  1. Calculated the base budget and saved it to memory")
+    print("  2. Performed other tasks (weather check)")
+    print("  3. Retrieved the base budget from memory later in the same task")
+    print("  4. Used the retrieved value to calculate the final total")
+    print("\nMemory acts as a 'scratch pad' for complex multi-step reasoning!")
+    print("It persists within a single process() call, enabling the agent to")
+    print("store intermediate results and retrieve them when needed.")
 
 
 if __name__ == "__main__":
