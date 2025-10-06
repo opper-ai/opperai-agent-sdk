@@ -19,9 +19,11 @@ from .utils.decorators import tool, hook
 from .base.context import AgentContext
 from .memory.memory import Memory
 
-# from .agents.react import ReactAgent  # Phase 4
-# from .mcp.provider import mcp  # Phase 4
-# from .mcp.config import MCPServerConfig  # Phase 4
+# MCP integration (Phase 4)
+from .mcp.provider import mcp
+from .mcp.config import MCPServerConfig
+
+# from .agents.react import ReactAgent  # Phase 5
 
 __all__ = [
     "__version__",
@@ -30,7 +32,7 @@ __all__ = [
     "hook",
     "AgentContext",
     "Memory",
+    "mcp",
+    "MCPServerConfig",
     # "ReactAgent",
-    # "mcp",
-    # "MCPServerConfig",
 ]

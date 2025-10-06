@@ -245,6 +245,10 @@ class Agent(BaseAgent):
                     )
                 break
 
+        # Disconnect MCP servers before generating final result
+        # This prevents issues with stdio pipes during final LLM call
+        await self._deactivate_tool_providers()
+
         result = await self._generate_final_result(goal)
         return result
 
@@ -438,7 +442,7 @@ The memory you write persists across all process() calls on this agent.
                     "iteration": cycle.iteration,
                     "actions_taken": [r.tool_name for r in cycle.results],
                     "results": [
-                        {"tool": r.tool_name, "result": str(r.result)[:200]}
+                        {"tool": r.tool_name, "result": str(r.result)}
                         for r in cycle.results
                         if r.success
                     ],

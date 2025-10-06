@@ -1,18 +1,17 @@
 """
 Model Context Protocol (MCP) integration.
 
-This module provides MCP client and tool provider implementations
-for seamless integration with MCP servers.
+Provides clean integration with MCP servers as tool providers.
 """
 
-# Will be populated as we implement
-# from .config import MCPServerConfig
-# from .provider import MCPToolProvider, mcp
-# from .client import MCPClient
+from .config import MCPServerConfig
+from .client import MCPClient, MCPTool
+from .provider import MCPToolProvider, mcp
 
 __all__ = [
-    # "MCPServerConfig",
-    # "MCPToolProvider",
-    # "mcp",
-    # "MCPClient",
+    "MCPServerConfig",
+    "MCPClient",
+    "MCPTool",
+    "MCPToolProvider",
+    "mcp",
 ]
