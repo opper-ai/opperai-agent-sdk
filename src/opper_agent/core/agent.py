@@ -62,7 +62,9 @@ class Agent(BaseAgent):
             await self._activate_tool_providers()
 
             # Start trace
-            trace = self.start_trace(name=f"{self.name}_execution", input_data=input)
+            trace = await self.start_trace(
+                name=f"{self.name}_execution", input_data=input
+            )
             self.context.trace_id = trace.id
 
             # Trigger: agent_start
@@ -80,7 +82,9 @@ class Agent(BaseAgent):
 
             if trace:
                 # Update trace output after successful completion
-                self.opper.spans.update(span_id=trace.id, output=str(result))
+                await self.opper.spans.update_async(
+                    span_id=trace.id, output=str(result)
+                )
 
             return result
 
@@ -223,8 +227,8 @@ IMPORTANT:
             HookEvents.LLM_CALL, self.context, agent=self, call_type="think"
         )
 
-        # Call Opper
-        response = await self.opper.call(
+        # Call Opper (use call_async for async)
+        response = await self.opper.call_async(
             name="think",
             instructions=instructions,
             input=context,
@@ -321,7 +325,7 @@ IMPORTANT:
         instructions = """Generate the final result based on the execution history.
 Follow any instructions provided for formatting and style."""
 
-        response = await self.opper.call(
+        response = await self.opper.call_async(
             name="generate_final_result",
             instructions=instructions,
             input=context,
@@ -341,7 +345,7 @@ Follow any instructions provided for formatting and style."""
         if not catalog:
             return None
 
-        response = await self.opper.call(
+        response = await self.opper.call_async(
             name="memory_router",
             instructions=self._memory_router_instructions(),
             input={

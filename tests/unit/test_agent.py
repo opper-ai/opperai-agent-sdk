@@ -62,7 +62,7 @@ async def test_agent_with_memory(mock_opper_client):
 async def test_agent_simple_execution(mock_opper_client):
     """Test basic agent execution flow."""
     # Mock responses
-    mock_opper_client.call = AsyncMock(
+    mock_opper_client.call_async = AsyncMock(
         side_effect=[
             # First call: think - decide to use add tool
             AsyncMock(
@@ -99,13 +99,13 @@ async def test_agent_simple_execution(mock_opper_client):
 
     result = await agent.process("What is 5 + 3?")
     assert result == "The sum of 5 and 3 is 8"
-    assert mock_opper_client.call.call_count == 3
+    assert mock_opper_client.call_async.call_count == 3
 
 
 @pytest.mark.asyncio
 async def test_agent_multiple_tool_calls(mock_opper_client):
     """Test agent executing multiple tools in one iteration."""
-    mock_opper_client.call = AsyncMock(
+    mock_opper_client.call_async = AsyncMock(
         side_effect=[
             # Think: call both add and multiply
             AsyncMock(
@@ -159,7 +159,7 @@ async def test_agent_multiple_tool_calls(mock_opper_client):
 @pytest.mark.asyncio
 async def test_agent_tool_not_found(mock_opper_client):
     """Test agent handling of non-existent tool."""
-    mock_opper_client.call = AsyncMock(
+    mock_opper_client.call_async = AsyncMock(
         side_effect=[
             # Think: try to call non-existent tool
             AsyncMock(
@@ -204,7 +204,7 @@ async def test_agent_tool_not_found(mock_opper_client):
 @pytest.mark.asyncio
 async def test_agent_tool_execution_error(mock_opper_client):
     """Test agent handling of tool execution errors."""
-    mock_opper_client.call = AsyncMock(
+    mock_opper_client.call_async = AsyncMock(
         side_effect=[
             # Think: call failing tool
             AsyncMock(
@@ -246,7 +246,7 @@ async def test_agent_tool_execution_error(mock_opper_client):
 async def test_agent_max_iterations(mock_opper_client):
     """Test agent respects max_iterations limit."""
     # Always return tool calls to force max iterations
-    mock_opper_client.call = AsyncMock(
+    mock_opper_client.call_async = AsyncMock(
         return_value=AsyncMock(
             json_payload={
                 "reasoning": "Keep going",
@@ -269,7 +269,7 @@ async def test_agent_max_iterations(mock_opper_client):
 
     # This should stop after 3 iterations and generate final result
     # Mock the final result call
-    mock_opper_client.call.side_effect = [
+    mock_opper_client.call_async.side_effect = [
         AsyncMock(
             json_payload={
                 "reasoning": "Iteration 1",
@@ -312,7 +312,7 @@ async def test_agent_max_iterations(mock_opper_client):
 @pytest.mark.asyncio
 async def test_agent_with_memory_updates(mock_opper_client):
     """Test agent writing to memory."""
-    mock_opper_client.call = AsyncMock(
+    mock_opper_client.call_async = AsyncMock(
         side_effect=[
             # Think: update memory
             AsyncMock(
@@ -352,7 +352,7 @@ async def test_agent_with_memory_updates(mock_opper_client):
 @pytest.mark.asyncio
 async def test_agent_context_tracking(mock_opper_client):
     """Test that agent properly tracks context during execution."""
-    mock_opper_client.call = AsyncMock(
+    mock_opper_client.call_async = AsyncMock(
         side_effect=[
             AsyncMock(
                 json_payload={
@@ -401,7 +401,7 @@ async def test_agent_input_schema_validation(mock_opper_client):
         task: str
         priority: int = 1
 
-    mock_opper_client.call = AsyncMock(
+    mock_opper_client.call_async = AsyncMock(
         side_effect=[
             AsyncMock(
                 json_payload={

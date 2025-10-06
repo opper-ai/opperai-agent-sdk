@@ -56,9 +56,12 @@ def mock_opper_client(monkeypatch):
     """
     mock = MagicMock()
     mock.call = AsyncMock()
+    mock.call_async = AsyncMock()  # Add call_async for async operations
     mock.spans = MagicMock()
     mock.spans.create = MagicMock(return_value=MagicMock(id="test-span-id"))
+    mock.spans.create_async = AsyncMock(return_value=MagicMock(id="test-span-id"))
     mock.spans.update = MagicMock()
+    mock.spans.update_async = AsyncMock()
 
     # Patch the Opper class constructor to return our mock
     def mock_opper_init(*args, **kwargs):

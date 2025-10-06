@@ -69,7 +69,7 @@ class BaseAgent(ABC):
         self.instructions = instructions
         self.max_iterations = max_iterations
         self.verbose = verbose
-        self.model = model or "anthropic/claude-3.5-sonnet"
+        self.model = model or "openai/gpt-5-mini"
 
         # Schemas
         self.input_schema = input_schema
@@ -86,7 +86,7 @@ class BaseAgent(ABC):
         api_key = opper_api_key or os.getenv("OPPER_API_KEY")
         if not api_key:
             raise ValueError("OPPER_API_KEY not found in environment or parameters")
-        self.opper = Opper(api_key=api_key)
+        self.opper = Opper(http_bearer=api_key)
 
         # Hook system
         self.hook_manager = self._setup_hooks(hooks)
@@ -161,9 +161,9 @@ class BaseAgent(ABC):
         return [tool.name for tool in self.tools]
 
     # Tracing
-    def start_trace(self, name: str, input_data: Any) -> Any:
+    async def start_trace(self, name: str, input_data: Any) -> Any:
         """Start a new Opper trace."""
-        return self.opper.spans.create(
+        return await self.opper.spans.create_async(
             name=name, input=str(input_data) if input_data else None
         )
 
