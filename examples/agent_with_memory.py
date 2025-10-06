@@ -139,7 +139,9 @@ async def main():
     print("  3. Retrieved the base budget from memory later in the same task")
     print("  4. Used the retrieved value to calculate the final total")
     print("  5. Retrieved the saved value again in a separate process() call")
-    print("\nMemory acts as a 'scratch pad' during a task and now persists for future tasks!")
+    print(
+        "\nMemory acts as a 'scratch pad' during a task and now persists for future tasks!"
+    )
 
 
 if __name__ == "__main__":
