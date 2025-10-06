@@ -70,18 +70,18 @@ uv run pytest
 uv run pytest --cov
 
 # Format code (ALWAYS run this at the end of your changes)
-uv run ruff format
+uvx ruff format
 
 # Lint code
-uv run ruff check
+uvx ruff check
 ```
 
 ### Development Workflow
 1. Make changes
 2. Write/update tests
 3. Run tests: `uv run pytest`
-4. Format code: `uv run ruff format` (**required before committing**)
-5. Check linting: `uv run ruff check`
+4. Format code: `uvx ruff format` (**required before committing**)
+5. Check linting: `uvx ruff check`
 
 ## Implementation Checklist
 
@@ -103,8 +103,8 @@ uv run ruff check
 - [ ] Verify all imports resolve correctly
 - [ ] Check integration with other components
 - [ ] Update examples if the API changed
-- [ ] **Run formatter: `uv run ruff format`** (required)
-- [ ] Run linter: `uv run ruff check`
+- [ ] **Run formatter: `uvx ruff format`** (required)
+- [ ] Run linter: `uvx ruff check`
 
 ## Common Patterns
 
@@ -279,14 +279,14 @@ async def test_tool_execution_error():
 ### ❌ NEVER Do This
 1. **NEVER remove tests without explicit permission** - Always ask first
 2. **NEVER remove test assertions to make tests pass** - Fix the code, not the test
-3. **NEVER skip running `uv run ruff format`** - Required before committing
+3. **NEVER skip running `uvx ruff format`** - Required before committing
 4. **NEVER write scripts instead of proper tests** - If you're testing something, write a pytest test
 
 ### ✅ ALWAYS Do This
 1. **ALWAYS put tests in the `tests/` folder** - Organized by type (unit/integration/e2e)
 2. **ALWAYS use `mock_acompletion` for mocking LLM responses** - It's very convenient
 3. **ALWAYS run `uv run pytest` before pushing** - Ensure tests pass
-4. **ALWAYS format with `uv run ruff format`** - Last step before committing
+4. **ALWAYS format with `uvx ruff format`** - Last step before committing
 
 ### Test Quality Standards
 - Tests must be isolated (unit tests shouldn't make external calls)
