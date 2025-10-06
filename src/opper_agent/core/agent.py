@@ -4,7 +4,7 @@ Main Agent implementation using 'while tools > 0' loop.
 This module contains the primary Agent class that implements the think-act loop.
 """
 
-from typing import Any, Optional, Dict
+from typing import Any, Optional, Dict, List
 
 from ..base.agent import BaseAgent
 from ..base.context import AgentContext, ExecutionCycle
@@ -32,6 +32,16 @@ class Agent(BaseAgent):
 
         super().__init__(*args, **kwargs)
 
+        self.memory: Optional[Memory] = None
+        if self.enable_memory:
+            try:
+                self.memory = Memory()
+            except Exception as exc:  # pragma: no cover - defensive guard
+                # Disable memory if initialization fails to keep agent operational
+                self.enable_memory = False
+                if self.verbose:
+                    print(f"Memory disabled due to initialization error: {exc}")
+
     async def process(self, input: Any, _parent_span_id: Optional[str] = None) -> Any:
         """
         Main entry point for agent execution.
@@ -54,7 +64,7 @@ class Agent(BaseAgent):
         self.context = AgentContext(
             agent_name=self.name,
             goal=input,
-            memory=Memory() if self.enable_memory else None,
+            memory=self.memory if self.enable_memory else None,
         )
 
         parent_span = None
@@ -107,124 +117,134 @@ class Agent(BaseAgent):
 
         Returns when thought.tool_calls is empty.
         """
-        iteration = 0
-
-        while iteration < self.max_iterations:
-            # Trigger: loop_start
+        while self.context.iteration < self.max_iterations:
             await self.hook_manager.trigger(
                 HookEvents.LOOP_START, self.context, agent=self
             )
 
             if self.verbose:
-                print(f"\n--- Iteration {iteration + 1}/{self.max_iterations} ---")
+                print(
+                    f"\n--- Iteration {self.context.iteration + 1}/{self.max_iterations} ---"
+                )
 
-            # Think
-            thought = await self._think(goal)
+            thought: Optional[Thought] = None
+            results: List[ToolResult] = []
+            loop_complete = False
 
-            if self.verbose:
-                print(f"Reasoning: {thought.reasoning}")
-                print(f"Tool calls: {len(thought.tool_calls)}")
-                if self.enable_memory and thought.memory_reads:
-                    print(
-                        f"Memory reads: {len(thought.memory_reads)} {thought.memory_reads}"
+            try:
+                thought = await self._think(goal)
+
+                if self.verbose and thought is not None:
+                    print(f"Reasoning: {thought.reasoning}")
+                    print(f"Tool calls: {len(thought.tool_calls)}")
+                    if self.enable_memory and thought.memory_reads:
+                        print(
+                            f"Memory reads: {len(thought.memory_reads)} {thought.memory_reads}"
+                        )
+
+                memory_reads_performed = False
+                memory_writes_performed = False
+
+                if (
+                    self.enable_memory
+                    and self.context.memory is not None
+                    and thought is not None
+                    and thought.memory_reads
+                ):
+                    if self.verbose:
+                        print(f"Loading memory keys: {thought.memory_reads}")
+
+                    memory_read_span = await self.opper.spans.create_async(
+                        name="memory_read",
+                        input=str(thought.memory_reads),
+                        parent_id=self.context.parent_span_id,
                     )
 
-            # Handle memory reads - load requested memory into context for next iteration
-            if self.enable_memory and thought.memory_reads:
-                if self.verbose:
-                    print(f"Loading memory keys: {thought.memory_reads}")
+                    memory_data = await self.context.memory.read(thought.memory_reads)
 
-                # Create span for memory read
-                memory_read_span = await self.opper.spans.create_async(
-                    name="memory_read",
-                    input=str(thought.memory_reads),
-                    parent_id=self.context.parent_span_id,
-                )
-
-                memory_data = await self.context.memory.read(thought.memory_reads)
-
-                # Update span with result
-                await self.opper.spans.update_async(
-                    span_id=memory_read_span.id,
-                    output=str(memory_data),
-                )
-
-                # Store in context metadata for access in tools or next iteration
-                self.context.metadata["current_memory"] = memory_data
-                if self.verbose:
-                    print(f"Loaded memory: {memory_data}")
-
-            # Update memory if needed (do this after reads, so writes are available next iteration)
-            if self.enable_memory and thought.memory_updates:
-                if self.verbose:
-                    print(f"Writing to memory: {list(thought.memory_updates.keys())}")
-
-                # Create span for memory write
-                memory_write_span = await self.opper.spans.create_async(
-                    name="memory_write",
-                    input=str(list(thought.memory_updates.keys())),
-                    parent_id=self.context.parent_span_id,
-                )
-
-                for key, update in thought.memory_updates.items():
-                    await self.context.memory.write(
-                        key=key,
-                        value=update.get("value"),
-                        description=update.get("description"),
-                        metadata=update.get("metadata"),
+                    await self.opper.spans.update_async(
+                        span_id=memory_read_span.id,
+                        output=str(memory_data),
                     )
 
-                # Update span with success
-                await self.opper.spans.update_async(
-                    span_id=memory_write_span.id,
-                    output=f"Successfully wrote {len(thought.memory_updates)} keys",
+                    self.context.metadata["current_memory"] = memory_data
+                    memory_reads_performed = True
+                    if self.verbose:
+                        print(f"Loaded memory: {memory_data}")
+
+                if (
+                    self.enable_memory
+                    and self.context.memory is not None
+                    and thought is not None
+                    and thought.memory_updates
+                ):
+                    if self.verbose:
+                        print(
+                            f"Writing to memory: {list(thought.memory_updates.keys())}"
+                        )
+
+                    memory_write_span = await self.opper.spans.create_async(
+                        name="memory_write",
+                        input=str(list(thought.memory_updates.keys())),
+                        parent_id=self.context.parent_span_id,
+                    )
+
+                    for key, update in thought.memory_updates.items():
+                        await self.context.memory.write(
+                            key=key,
+                            value=update.get("value"),
+                            description=update.get("description"),
+                            metadata=update.get("metadata"),
+                        )
+
+                    await self.opper.spans.update_async(
+                        span_id=memory_write_span.id,
+                        output=f"Successfully wrote {len(thought.memory_updates)} keys",
+                    )
+
+                    memory_writes_performed = True
+
+                if thought is not None:
+                    for tool_call in thought.tool_calls:
+                        result = await self._execute_tool(tool_call)
+                        results.append(result)
+
+                    cycle = ExecutionCycle(
+                        iteration=self.context.iteration,
+                        thought=thought,
+                        tool_calls=thought.tool_calls,
+                        results=results,
+                    )
+                    activity_occurred = (
+                        bool(results)
+                        or memory_reads_performed
+                        or memory_writes_performed
+                    )
+
+                    if activity_occurred:
+                        self.context.add_cycle(cycle)
+
+                    has_tool_calls = len(thought.tool_calls) > 0
+                    has_memory_reads = (
+                        self.enable_memory and len(thought.memory_reads) > 0
+                    )
+                    loop_complete = not has_tool_calls and not has_memory_reads
+
+                    if self.verbose and has_memory_reads and not has_tool_calls:
+                        print("Continuing to next iteration with loaded memory...")
+
+            finally:
+                await self.hook_manager.trigger(
+                    HookEvents.LOOP_END, self.context, agent=self
                 )
 
-            # Check if done - exit only when there are NO tool calls AND NO memory reads
-            has_tool_calls = thought.tool_calls and len(thought.tool_calls) > 0
-            has_memory_reads = (
-                self.enable_memory
-                and thought.memory_reads
-                and len(thought.memory_reads) > 0
-            )
-
-            if not has_tool_calls and not has_memory_reads:
+            if loop_complete:
                 if self.verbose:
                     print(
                         "No more tool calls or memory reads - generating final result"
                     )
                 break
 
-            # If only memory reads (no tool calls), continue to next iteration
-            if has_memory_reads and not has_tool_calls:
-                if self.verbose:
-                    print("Continuing to next iteration with loaded memory...")
-                iteration += 1
-                continue
-
-            # Execute tool calls
-            results = []
-            for tool_call in thought.tool_calls:
-                result = await self._execute_tool(tool_call)
-                results.append(result)
-
-            # Record cycle
-            cycle = ExecutionCycle(
-                iteration=iteration,
-                thought=thought,
-                tool_calls=thought.tool_calls,
-                results=results,
-            )
-            self.context.add_cycle(cycle)
-
-            # Trigger: loop_end
-            await self.hook_manager.trigger(
-                HookEvents.LOOP_END, self.context, agent=self
-            )
-
-            iteration += 1
-
-        # Generate final result
         result = await self._generate_final_result(goal)
         return result
 

@@ -6,6 +6,7 @@ This example shows:
 - Multiple sequential tasks that build on each other
 - Memory-aware decision making across tasks
 - Agent accessing previous task results from memory
+- Memory persisting across separate `process()` calls
 """
 
 import asyncio
@@ -67,15 +68,15 @@ async def main():
     )
 
     print("=" * 70)
-    print("Agent Memory Example - Memory Within Single Process")
+    print("Agent Memory Example - Memory Within and Across process() Calls")
     print("=" * 70)
     print()
-    print("This example shows memory working WITHIN a single process() call.")
-    print("The agent will use memory as a 'scratch pad' during multi-step tasks.")
+    print("First we show memory as a scratch pad within one process().")
+    print("Then we run a second process() call that reuses the saved memory.")
     print()
 
     # Task: Multi-step task that uses memory WITHIN the same process() call
-    print("🎯 TASK: Multi-step vacation planning with memory")
+    print("🎯 TASK 1: Multi-step vacation planning with memory")
     print("-" * 70)
     result = await agent.process(
         """I'm planning a vacation to Tokyo. Please:
@@ -89,13 +90,37 @@ async def main():
     )
     print(f"\n✅ Result: {result}\n")
 
-    # Final memory state
-    if agent.context and agent.context.memory:
+    # Show memory after the first task
+    if agent.memory:
         print("=" * 70)
-        print("📋 Final Memory State:")
+        print("📋 Memory After Task 1:")
         print("=" * 70)
-        catalog = await agent.context.memory.list_entries()
-        memory_data = await agent.context.memory.read()
+        catalog = await agent.memory.list_entries()
+        memory_data = await agent.memory.read()
+
+        for entry in catalog:
+            key = entry["key"]
+            print(f"\n{key}:")
+            print(f"  Description: {entry['description']}")
+            print(f"  Value: {memory_data.get(key, 'N/A')}")
+            if entry.get("metadata"):
+                print(f"  Metadata: {entry['metadata']}")
+
+    # Second task demonstrates memory persistence across process() calls
+    print("\n🎯 TASK 2: Follow-up that reuses saved memory")
+    print("-" * 70)
+    result_follow_up = await agent.process(
+        """Remind me what base budget you stored for Tokyo. Use that memory, add a 10% contingency,
+        and return the updated total. If the memory is missing, let me know."""
+    )
+    print(f"\n✅ Result: {result_follow_up}\n")
+
+    if agent.memory:
+        print("=" * 70)
+        print("📋 Memory After Task 2 (persists across process calls):")
+        print("=" * 70)
+        catalog = await agent.memory.list_entries()
+        memory_data = await agent.memory.read()
 
         for entry in catalog:
             key = entry["key"]
@@ -113,9 +138,8 @@ async def main():
     print("  2. Performed other tasks (weather check)")
     print("  3. Retrieved the base budget from memory later in the same task")
     print("  4. Used the retrieved value to calculate the final total")
-    print("\nMemory acts as a 'scratch pad' for complex multi-step reasoning!")
-    print("It persists within a single process() call, enabling the agent to")
-    print("store intermediate results and retrieve them when needed.")
+    print("  5. Retrieved the saved value again in a separate process() call")
+    print("\nMemory acts as a 'scratch pad' during a task and now persists for future tasks!")
 
 
 if __name__ == "__main__":

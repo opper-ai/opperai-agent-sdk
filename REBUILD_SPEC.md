@@ -476,7 +476,7 @@ class ExecutionCycle(BaseModel):
 
 The memory system uses a **catalog-based approach** where the LLM sees available memory and directly requests what it needs:
 
-**Memory Core (matches spec):**
+**Memory Core (matches spec):** (Memory objects live for the lifetime of an agent instance so data persists across `process()` calls.)
 
 ```python
 class MemoryEntry(BaseModel):

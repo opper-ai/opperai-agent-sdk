@@ -1408,6 +1408,7 @@ The memory system uses a catalog-based approach where:
 2. The LLM **requests specific keys** via `Thought.memory_reads` field
 3. Requested memory is **loaded into context** for the next iteration
 4. The LLM **writes memory** via `Thought.memory_updates` field
+5. Memory state is stored on the agent instance so it persists across multiple `process()` invocations when `enable_memory=True`
 
 **Memory Core (`src/opper_agent/memory/memory.py`):**
 
@@ -1450,6 +1451,17 @@ class Thought(BaseModel):
 **Agent Integration (`src/opper_agent/core/agent.py`):**
 
 ```python
+# In Agent.__init__ - create persistent memory once per agent
+if self.enable_memory:
+    self.memory = Memory()
+
+# In process() - share the persistent memory with the execution context
+self.context = AgentContext(
+    agent_name=self.name,
+    goal=input,
+    memory=self.memory if self.enable_memory else None,
+)
+
 # In _think() - provide memory catalog to LLM
 context = {
     # ... other context fields
