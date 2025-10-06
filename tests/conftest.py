@@ -47,7 +47,7 @@ def mock_acompletion(monkeypatch):
 
 
 @pytest.fixture
-def mock_opper_client():
+def mock_opper_client(monkeypatch):
     """
     Mock Opper client for agent initialization.
 
@@ -59,6 +59,12 @@ def mock_opper_client():
     mock.spans = MagicMock()
     mock.spans.create = MagicMock(return_value=MagicMock(id="test-span-id"))
     mock.spans.update = MagicMock()
+
+    # Patch the Opper class constructor to return our mock
+    def mock_opper_init(*args, **kwargs):
+        return mock
+
+    monkeypatch.setattr("opper_agent.base.agent.Opper", mock_opper_init)
     return mock
 
 
