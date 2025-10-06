@@ -162,10 +162,14 @@ class BaseAgent(ABC):
 
     # Abstract methods - must be implemented by subclasses
     @abstractmethod
-    async def process(self, input: Any) -> Any:
+    async def process(self, input: Any, _parent_span_id: Optional[str] = None) -> Any:
         """
         Main entry point for agent execution.
         Must be implemented by subclasses.
+
+        Args:
+            input: Goal/task to process
+            _parent_span_id: Optional parent span ID for nested agent calls
         """
         pass
 
@@ -194,14 +198,16 @@ class BaseAgent(ABC):
         tool_name = tool_name or f"{self.name}_agent"
         description = description or f"Delegate to {self.name}: {self.description}"
 
-        def agent_tool(task: str, **kwargs) -> Any:
+        def agent_tool(
+            task: str, _parent_span_id: Optional[str] = None, **kwargs
+        ) -> Any:
             """Tool function that delegates to agent."""
 
             async def call_agent():
                 input_data = {"task": task, **kwargs}
                 if self.instructions:
                     input_data["instructions"] = self.instructions
-                return await self.process(input_data)
+                return await self.process(input_data, _parent_span_id=_parent_span_id)
 
             # Handle event loop
             try:

@@ -18,7 +18,7 @@ from opper_agent.base.hooks import HookEvents
 class TestAgent(BaseAgent):
     """Minimal concrete agent for testing BaseAgent functionality."""
 
-    async def process(self, input: Any) -> Any:
+    async def process(self, input: Any, _parent_span_id: str = None) -> Any:
         return f"Processed: {input}"
 
     async def _run_loop(self, goal: Any) -> Any:
@@ -257,7 +257,7 @@ def test_agent_with_instructions(mock_opper_client, monkeypatch):
 class SlowAgent(BaseAgent):
     """Agent that simulates slow processing for timeout testing."""
 
-    async def process(self, input: Any) -> Any:
+    async def process(self, input: Any, _parent_span_id: str = None) -> Any:
         await asyncio.sleep(2)  # Simulate slow processing
         return f"Processed: {input}"
 
@@ -268,7 +268,7 @@ class SlowAgent(BaseAgent):
 class FailingAgent(BaseAgent):
     """Agent that fails during processing for error testing."""
 
-    async def process(self, input: Any) -> Any:
+    async def process(self, input: Any, _parent_span_id: str = None) -> Any:
         raise ValueError("Agent processing failed intentionally")
 
     async def _run_loop(self, goal: Any) -> Any:

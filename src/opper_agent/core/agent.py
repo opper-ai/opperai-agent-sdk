@@ -32,12 +32,13 @@ class Agent(BaseAgent):
 
         super().__init__(*args, **kwargs)
 
-    async def process(self, input: Any) -> Any:
+    async def process(self, input: Any, _parent_span_id: Optional[str] = None) -> Any:
         """
         Main entry point for agent execution.
 
         Args:
             input: Goal/task to process (validated against input_schema)
+            _parent_span_id: Optional parent span ID for nested agent calls
 
         Returns:
             Result (validated against output_schema if specified)
@@ -62,8 +63,11 @@ class Agent(BaseAgent):
             await self._activate_tool_providers()
 
             # Create parent span for this agent execution
+            # If _parent_span_id is provided, this span will be nested under it
             parent_span = await self.opper.spans.create_async(
-                name=f"{self.name}_execution", input=str(input)
+                name=f"{self.name}_execution",
+                input=str(input),
+                parent_id=_parent_span_id,
             )
             self.context.parent_span_id = parent_span.id
 
@@ -377,8 +381,10 @@ The memory you write persists across all process() calls on this agent.
             parameters=tool_call.parameters,
         )
 
-        # Execute
-        result = await tool.execute(**tool_call.parameters)
+        # Execute - pass tool span as parent for nested operations (like agents-as-tools)
+        result = await tool.execute(
+            **tool_call.parameters, _parent_span_id=tool_span.id
+        )
 
         # Update tool span with result
         await self.opper.spans.update_async(

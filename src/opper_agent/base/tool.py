@@ -110,8 +110,16 @@ class FunctionTool(Tool):
         start_time = time.time()
 
         try:
-            # Filter out special parameters
+            # Extract special parameters (prefixed with _)
+            parent_span_id = kwargs.get("_parent_span_id")
+
+            # Filter out special parameters for function call
             filtered_kwargs = {k: v for k, v in kwargs.items() if not k.startswith("_")}
+
+            # Pass parent_span_id if function accepts it
+            sig = inspect.signature(self.func)
+            if "_parent_span_id" in sig.parameters:
+                filtered_kwargs["_parent_span_id"] = parent_span_id
 
             # Check if function is async
             if asyncio.iscoroutinefunction(self.func):
