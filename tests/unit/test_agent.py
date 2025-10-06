@@ -647,3 +647,67 @@ async def test_agent_input_schema_validation(mock_opper_client):
     result = await agent.process({"task": "test task", "priority": 5})
     assert agent.context.goal.task == "test task"
     assert agent.context.goal.priority == 5
+
+
+@pytest.mark.asyncio
+async def test_agent_usage_tracking(mock_opper_client):
+    """Test that agent properly tracks token usage from LLM calls."""
+    # Mock LLM calls with usage information
+    mock_opper_client.call_async = AsyncMock(
+        side_effect=[
+            # First think call
+            AsyncMock(
+                json_payload={
+                    "reasoning": "Need to add numbers",
+                    "tool_calls": [
+                        {
+                            "name": "add",
+                            "parameters": {"a": 5, "b": 3},
+                            "reasoning": "Adding",
+                        }
+                    ],
+                    "user_message": "Calculating...",
+                    "memory_updates": {},
+                },
+                usage={
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                    "total_tokens": 150,
+                },
+            ),
+            # Second think call
+            AsyncMock(
+                json_payload={
+                    "reasoning": "Done",
+                    "tool_calls": [],
+                    "user_message": "Complete",
+                    "memory_updates": {},
+                },
+                usage={
+                    "input_tokens": 120,
+                    "output_tokens": 30,
+                    "total_tokens": 150,
+                },
+            ),
+            # Final result call
+            AsyncMock(
+                message="The sum is 8",
+                usage={
+                    "input_tokens": 80,
+                    "output_tokens": 20,
+                    "total_tokens": 100,
+                },
+            ),
+        ]
+    )
+
+    agent = Agent(
+        name="MathAgent", tools=[add], verbose=False, opper_api_key="test-key"
+    )
+    result = await agent.process("What is 5 + 3?")
+
+    # Verify usage was tracked
+    assert agent.context.usage.requests == 3  # Three LLM calls
+    assert agent.context.usage.input_tokens == 300  # 100 + 120 + 80
+    assert agent.context.usage.output_tokens == 100  # 50 + 30 + 20
+    assert agent.context.usage.total_tokens == 400  # 150 + 150 + 100

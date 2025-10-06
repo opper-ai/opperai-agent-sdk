@@ -981,7 +981,7 @@ requires-dist = [
     { name = "isort", marker = "extra == 'dev'", specifier = ">=5.12.0" },
     { name = "mcp", specifier = ">=1.14.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
-    { name = "opperai", specifier = ">=0.3.0" },
+    { name = "opperai", specifier = ">=1.2.1" },
     { name = "pydantic", specifier = ">=2.6.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "pytest-asyncio", specifier = ">=1.1.0" },
@@ -996,16 +996,16 @@ provides-extras = ["mcp", "composio", "dev"]
 
 [[package]]
 name = "opperai"
-version = "1.1.2"
+version = "1.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpcore" },
     { name = "httpx" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c9/ef/c9272bf674545cc65517a75ef86d7830f7bc1063ee33c446f11ca3c274c6/opperai-1.1.2.tar.gz", hash = "sha256:c575be600f386457f74456a06f6b8c1a6a044d3290e60b878730db7d9aebcf5c", size = 100123, upload-time = "2025-08-19T09:20:20.259Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/69/b1/6ab64b3568fe1164308d9dc4d3e63dd43b59ee6bc9141bb07da2350ad01e/opperai-1.2.1.tar.gz", hash = "sha256:3c3a339a3002a5a70c8888fe208f86298692c22ed079eeb93d42508c9539e65c", size = 108126, upload-time = "2025-10-01T12:54:04.608Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ae/13/6d1e5ef9d2a650a4a1b9b965253e8240d15c8471260dc24bbab98725c2ff/opperai-1.1.2-py3-none-any.whl", hash = "sha256:a3373fd44b88d96e535ce8284dd31c1c6e24dcf3be22705e131bd3fae3836f04", size = 229773, upload-time = "2025-08-19T09:20:18.263Z" },
+    { url = "https://files.pythonhosted.org/packages/86/88/4331bf18d52100686a5e8e03b0fc9683514fd8e45e8a987d33243e981cdb/opperai-1.2.1-py3-none-any.whl", hash = "sha256:3466c70c0998b8e6dc4432b0deaf75e6b33c0c155f59cf01972223316698c8b6", size = 249938, upload-time = "2025-10-01T12:54:03.064Z" },
 ]
 
 [[package]]

@@ -242,8 +242,7 @@ IMPORTANT:
         )
 
         # Track usage
-        # (Opper returns usage in response)
-        # self.context.update_usage(...)
+        self._track_usage(response)
 
         # Trigger: llm_response
         await self.hook_manager.trigger(
@@ -351,6 +350,10 @@ Follow any instructions provided for formatting and style."""
             model=self.model,
             parent_span_id=self.context.parent_span_id,
         )
+
+        # Track usage
+        self._track_usage(response)
+
         # Serialize the response
         if self.output_schema:
             return self.output_schema(**response.json_payload)
@@ -376,6 +379,9 @@ Follow any instructions provided for formatting and style."""
             parent_span_id=self.context.parent_span_id,
         )
 
+        # Track usage
+        self._track_usage(response)
+
         decision = MemoryDecision(**response.json_payload)
         if not decision.should_use_memory or not decision.selected_keys:
             return None
@@ -388,3 +394,29 @@ Follow any instructions provided for formatting and style."""
 - Only set should_use_memory=true when an entry clearly helps.
 - selected_keys must come from memory_catalog.
 - Keep the rationale concise."""
+
+    def _track_usage(self, response: Any) -> None:
+        """
+        Track token usage from an Opper response.
+
+        Safely extracts usage info if available, otherwise skips tracking.
+        """
+        if not hasattr(response, "usage") or not response.usage:
+            return
+
+        try:
+            from ..base.context import Usage
+
+            usage_dict = response.usage
+            if isinstance(usage_dict, dict):
+                usage = Usage(
+                    requests=1,
+                    input_tokens=usage_dict.get("input_tokens", 0),
+                    output_tokens=usage_dict.get("output_tokens", 0),
+                    total_tokens=usage_dict.get("total_tokens", 0),
+                )
+                self.context.update_usage(usage)
+        except Exception as e:
+            # Don't break execution if usage tracking fails
+            if self.verbose:
+                print(f"Warning: Could not track usage: {e}")
