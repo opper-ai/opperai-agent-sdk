@@ -210,7 +210,7 @@ def test_agent_default_model(mock_opper_client, monkeypatch):
 
     agent = TestAgent(name="Test")
 
-    assert agent.model == "anthropic/claude-3.5-sonnet"
+    assert agent.model == "gcp/gemini-flash-latest"
 
 
 def test_agent_with_custom_description(mock_opper_client, monkeypatch):

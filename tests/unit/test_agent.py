@@ -387,9 +387,74 @@ async def test_agent_context_tracking(mock_opper_client):
 
     # Verify context state
     assert agent.context.agent_name == "TestAgent"
-    assert agent.context.trace_id == "test-span-id"
+    assert agent.context.parent_span_id == "test-span-id"
     assert agent.context.iteration == 1
     assert len(agent.context.execution_history) == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_span_hierarchy(mock_opper_client):
+    """Test that agent creates proper span hierarchy with parent-child relationships."""
+    # Mock span creation
+    parent_span = AsyncMock(id="parent-span-123")
+    mock_opper_client.spans.create_async = AsyncMock(return_value=parent_span)
+    mock_opper_client.spans.update_async = AsyncMock()
+
+    # Mock LLM calls
+    mock_opper_client.call_async = AsyncMock(
+        side_effect=[
+            # Think call
+            AsyncMock(
+                json_payload={
+                    "reasoning": "Calculating",
+                    "tool_calls": [
+                        {
+                            "name": "add",
+                            "parameters": {"a": 2, "b": 3},
+                            "reasoning": "Add",
+                        }
+                    ],
+                    "user_message": "Working...",
+                    "memory_updates": {},
+                }
+            ),
+            # Think call (done)
+            AsyncMock(
+                json_payload={
+                    "reasoning": "Complete",
+                    "tool_calls": [],
+                    "user_message": "Done",
+                    "memory_updates": {},
+                }
+            ),
+            # Generate final result
+            AsyncMock(message="The answer is 5"),
+        ]
+    )
+
+    agent = Agent(
+        name="MathAgent", tools=[add], verbose=False, opper_api_key="test-key"
+    )
+    result = await agent.process("What is 2 + 3?")
+
+    # Verify parent span was created
+    mock_opper_client.spans.create_async.assert_called_once()
+    create_call = mock_opper_client.spans.create_async.call_args
+    assert create_call.kwargs["name"] == "MathAgent_execution"
+    assert "2 + 3" in create_call.kwargs["input"]
+
+    # Verify context has parent span ID
+    assert agent.context.parent_span_id == "parent-span-123"
+
+    # Verify all LLM calls used parent_span_id
+    for call in mock_opper_client.call_async.call_args_list:
+        assert call.kwargs["parent_span_id"] == "parent-span-123"
+
+    # Verify parent span was updated with final output
+    mock_opper_client.spans.update_async.assert_called_once()
+    update_call = mock_opper_client.spans.update_async.call_args
+    assert update_call.kwargs["span_id"] == "parent-span-123"
+    assert "answer is 5" in update_call.kwargs["output"]
 
 
 @pytest.mark.asyncio

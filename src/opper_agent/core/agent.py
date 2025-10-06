@@ -56,16 +56,16 @@ class Agent(BaseAgent):
             memory=Memory() if self.enable_memory else None,
         )
 
-        trace = None
+        parent_span = None
 
         try:
             await self._activate_tool_providers()
 
-            # Start trace
-            trace = await self.start_trace(
-                name=f"{self.name}_execution", input_data=input
+            # Create parent span for this agent execution
+            parent_span = await self.opper.spans.create_async(
+                name=f"{self.name}_execution", input=str(input)
             )
-            self.context.trace_id = trace.id
+            self.context.parent_span_id = parent_span.id
 
             # Trigger: agent_start
             await self.hook_manager.trigger(
@@ -80,10 +80,10 @@ class Agent(BaseAgent):
                 HookEvents.AGENT_END, self.context, agent=self, result=result
             )
 
-            if trace:
-                # Update trace output after successful completion
+            if parent_span:
+                # Update parent span with final output
                 await self.opper.spans.update_async(
-                    span_id=trace.id, output=str(result)
+                    span_id=parent_span.id, output=str(result)
                 )
 
             return result
@@ -118,8 +118,8 @@ class Agent(BaseAgent):
             thought = await self._think(goal)
 
             if self.verbose:
-                print(f"💭 Reasoning: {thought.reasoning}")
-                print(f"🔧 Tool calls: {len(thought.tool_calls)}")
+                print(f"Reasoning: {thought.reasoning}")
+                print(f"Tool calls: {len(thought.tool_calls)}")
 
             # Update memory if needed (do this before breaking on empty tool_calls)
             if self.enable_memory and thought.memory_updates:
@@ -134,7 +134,7 @@ class Agent(BaseAgent):
             # Check if done
             if not thought.tool_calls or len(thought.tool_calls) == 0:
                 if self.verbose:
-                    print("✅ No more tool calls - generating final result")
+                    print("No more tool calls - generating final result")
                 break
 
             # Execute tool calls
@@ -200,7 +200,7 @@ class Agent(BaseAgent):
                         {
                             "tool": r.tool_name,
                             "success": r.success,
-                            "result": str(r.result)
+                            "result": str(r.result),
                         }
                         for r in cycle.results
                     ],
@@ -238,7 +238,7 @@ IMPORTANT:
             input=context,
             output_schema=Thought,
             model=self.model,
-            parent_span_id=self.context.span_id,
+            parent_span_id=self.context.parent_span_id,
         )
 
         # Track usage
@@ -267,7 +267,7 @@ IMPORTANT:
         """Execute a single tool call."""
 
         if self.verbose:
-            print(f"  ⚡ Calling {tool_call.name} with {tool_call.parameters}")
+            print(f"[TOOL CALL] - {tool_call.name} with {tool_call.parameters}")
 
         tool = self.get_tool(tool_call.name)
         if not tool:
@@ -297,8 +297,8 @@ IMPORTANT:
         )
 
         if self.verbose:
-            status = "✅" if result.success else "❌"
-            print(f"  {status} Result: {result.result}")
+            status = "Status: " + "SUCCESS" if result.success else "FAILED"
+            print(f"---> [RESULT] {status} Result: {result.result}")
 
         return result
 
@@ -306,7 +306,7 @@ IMPORTANT:
         """Generate final structured result."""
 
         if self.verbose:
-            print("\n🎯 Generating final result...")
+            print("\n[GENERATING FINAL RESULT]......\n")
 
         context = {
             "goal": str(goal),
@@ -335,9 +335,9 @@ Follow any instructions provided for formatting and style."""
             input=context,
             output_schema=self.output_schema,
             model=self.model,
-            parent_span_id=self.context.trace_id,
+            parent_span_id=self.context.parent_span_id,
         )
-
+        # Serialize the response
         if self.output_schema:
             return self.output_schema(**response.json_payload)
         return response.message
@@ -359,7 +359,7 @@ Follow any instructions provided for formatting and style."""
             },
             output_schema=MemoryDecision,
             model=self.model,
-            parent_span_id=self.context.trace_id,
+            parent_span_id=self.context.parent_span_id,
         )
 
         decision = MemoryDecision(**response.json_payload)

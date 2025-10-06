@@ -60,8 +60,9 @@ class AgentContext(BaseModel):
     session_id: str = Field(default_factory=lambda: str(time.time()))
 
     # Tracing
-    trace_id: Optional[str] = Field(default=None, description="Root trace ID")
-    span_id: Optional[str] = Field(default=None, description="Current span ID")
+    parent_span_id: Optional[str] = Field(
+        default=None, description="Parent span ID for all calls in this agent execution"
+    )
 
     # Execution state
     iteration: int = Field(default=0, description="Current iteration")

@@ -69,7 +69,7 @@ class BaseAgent(ABC):
         self.instructions = instructions
         self.max_iterations = max_iterations
         self.verbose = verbose
-        self.model = model or "openai/gpt-5-mini"
+        self.model = model or "gcp/gemini-flash-latest"
 
         # Schemas
         self.input_schema = input_schema
@@ -159,13 +159,6 @@ class BaseAgent(ABC):
     def list_tools(self) -> List[str]:
         """Get list of tool names."""
         return [tool.name for tool in self.tools]
-
-    # Tracing
-    async def start_trace(self, name: str, input_data: Any) -> Any:
-        """Start a new Opper trace."""
-        return await self.opper.spans.create_async(
-            name=name, input=str(input_data) if input_data else None
-        )
 
     # Abstract methods - must be implemented by subclasses
     @abstractmethod
