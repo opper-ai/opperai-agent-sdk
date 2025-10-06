@@ -3,8 +3,8 @@
 import asyncio
 
 # Lets start with importing the Opper Agent SDK
-from opper_agent_old import Agent, hook, RunContext, tool
-from opper_agent_old.mcp import MCPServerConfig, MCPToolManager
+from opper_agent import Agent, hook, tool, mcp, MCPServerConfig
+from opper_agent.base.context import AgentContext
 
 # deps
 from pydantic import BaseModel, Field
@@ -35,42 +35,44 @@ class ResearchFindings(BaseModel):
     detailed_analysis: str = Field(description="In-depth analysis of the topic")
 
 
-# We need to give it some tools. Lets connect to Composio and access search tools
-mcp = MCPToolManager()
-mcp.add_server(
-    MCPServerConfig(
-        name="composio-search",
-        url="https://apollo.composio.dev/v3/mcp/6f548f6b-1eeb-400d-9a75-59a6a7788b41/mcp?user_id=pg-test-afc92e70-3424-4c48-8444-deb49953260c",
-        transport="http-sse",
-        enabled=True,
-    )
+# Configure Composio MCP server for search tools
+composio_config = MCPServerConfig(
+    name="composio-search",
+    url="https://backend.composio.dev/v3/mcp/1be64960-269b-4267-9552-325a224e6fd3/mcp?user_id=pg-test-d27133ac-5c43-4f99-9d7c-df671282952c",
+    transport="http-sse",
 )
 
 
-# Actually lets add a hookk so we can peak into the agents reasoning as it is working
-@hook("on_think_end")
-async def on_think_end(context: RunContext, agent: Agent, thought: any):
-    print(thought.user_message)
+# Actually lets add a hook so we can peek into the agents reasoning as it is working
+@hook("loop_end")
+async def on_loop_end(context: AgentContext, agent: Agent):
+    """Print agent's reasoning after each iteration."""
+    if context.execution_history:
+        latest = context.execution_history[-1]
+        if latest.thought:
+            print(f"\n[Iteration {latest.iteration}] {latest.thought.reasoning}\n")
 
 
 # Lets add a custom tool so that the agent can save the report to a file
-@tool(description="Save the comprehensive report to a file in markdown format")
-def save_report(report: str):
+@tool
+def save_report(report: str) -> str:
+    """
+    Save the comprehensive report to a file in markdown format.
+
+    Args:
+        report: The markdown-formatted report content to save
+
+    Returns:
+        Confirmation message
+    """
     with open("report.md", "w", encoding="utf-8") as f:
         f.write(report)
-    return f"Report saved to report.md"
+    return "Report saved to report.md"
 
 
 async def main():
-    # Lets connect to the mcp servers and get the tools
-    await mcp.connect_all()
-    tools = mcp.get_all_tools()
-    tools.append(save_report)
-
-    print(f"Got {len(tools)} tools\n")
-
     # Lets add some more detailed instructions to the agent
-    instructions = """ 
+    instructions = """
     You are a comprehensive research agent that can use the search tools to find information on the web and the content tools to extract content and build a comprehensive report on the topic.
 
     Guidelines:
@@ -81,16 +83,20 @@ async def main():
     - When done, always save the report to a file using the save_report tool
     """
 
-    # Basic agent
+    # Create agent with MCP tools and custom tool
     agent = Agent(
         name="ComprehensiveResearchAgent",
         description="A comprehensive research agent that can use the search tools to find information on the web and the content tools to extract content and build a comprehensive report on the topic",
         instructions=instructions,
         input_schema=ResearchRequest,
         output_schema=ResearchFindings,
-        tools=tools,
-        hooks=[on_think_end],
+        tools=[
+            mcp(composio_config),  # MCP tools from Composio
+            save_report,  # Custom local tool
+        ],
         model="groq/gpt-oss-120b",  # Fast and cheap! But you can use any model you want.
+        max_iterations=50,  # Give it plenty of iterations for deep research
+        verbose=True,
     )
 
     result = await agent.process(
@@ -101,9 +107,10 @@ async def main():
             sources_required=15,
         )
     )
+    print("\n" + "=" * 60)
+    print("FINAL RESULT:")
+    print("=" * 60)
     print(result)
-
-    await mcp.disconnect_all()
 
 
 if __name__ == "__main__":
