@@ -50,7 +50,7 @@ class BaseAgent(ABC):
     name: str
     description: str
     instructions: Optional[str]
-    tools: List[Tool]
+    tools: Sequence[Union[Tool, ToolProvider]]
     input_schema: Optional[Type[BaseModel]]
     output_schema: Optional[Type[BaseModel]]
 
@@ -202,6 +202,51 @@ def tool(
     pass
 ```
 
+#### Tool Providers (Lazy Tool Resolution)
+```python
+class ToolProvider(Protocol):
+    """Expand into tools at runtime."""
+
+    async def setup(self, agent: "BaseAgent") -> List[Tool]:
+        """Prepare provider, connect resources, and return tools."""
+
+    async def teardown(self) -> None:
+        """Cleanup after the agent run finishes."""
+
+
+def normalize_tools(
+    raw: Sequence[Union[Tool, ToolProvider]]
+) -> Tuple[List[Tool], List[ToolProvider]]:
+    """Split concrete tools from providers so lifecycle can be managed."""
+
+    tools: List[Tool] = []
+    providers: List[ToolProvider] = []
+    for item in raw:
+        if isinstance(item, Tool):
+            tools.append(item)
+        else:
+            providers.append(item)
+    return tools, providers
+```
+
+In `BaseAgent.__init__` we store the raw list, then:
+
+```python
+self.base_tools, self.tool_providers = normalize_tools(tools or [])
+self.tools: List[Tool] = list(self.base_tools)
+self.active_provider_tools: Dict[ToolProvider, List[Tool]] = {}
+```
+
+During `process()`:
+
+```python
+await self._activate_tool_providers()
+try:
+    ...  # existing execution flow
+finally:
+    await self._deactivate_tool_providers()
+```
+
 ### 1.3 Hook System
 
 #### `HookManager`
@@ -238,6 +283,7 @@ class HookManager:
 - agent_error: When agent errors
 - loop_start: Start of each iteration
 - loop_end: End of each iteration
+- think_end: After the think step returns a Thought (before tool execution)
 - tool_call: Before tool execution
 - tool_result: After tool execution
 - llm_call: Before LLM call
@@ -317,10 +363,15 @@ class Agent(BaseAgent):
         LLM call to decide next action.
         Returns thought with tool calls (or empty if done).
         """
+        # Optional: quick memory probe so model can opt-in
+        memory_snapshot = None
+        if self.context.memory and self.context.memory.has_entries():
+            memory_snapshot = await self._prepare_memory_snapshot(goal)
+
         # Hook: llm_call
 
         # Build context for LLM
-        context = self._build_llm_context(goal)
+        context = self._build_llm_context(goal, memory=memory_snapshot)
 
         # Call Opper
         response = await self.opper.call(
@@ -337,7 +388,12 @@ class Agent(BaseAgent):
 
         # Hook: llm_response
 
-        return Thought(**response.json_payload)
+        thought = Thought(**response.json_payload)
+
+        # Hook: think_end
+        await self.hooks.trigger("think_end", self.context, thought=thought)
+
+        return thought
 
     async def _execute_tool(self, tool_call: ToolCall) -> ToolResult:
         """Execute a single tool call"""
@@ -380,6 +436,10 @@ class Thought(BaseModel):
         default=[],
         description="Tools to call (empty if task complete)"
     )
+    memory_updates: Dict[str, Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Keyed updates the agent wants to persist to memory"
+    )
     user_message: str = Field(description="Status update for user")
 ```
 
@@ -402,41 +462,131 @@ class ExecutionCycle(BaseModel):
 ### 3.1 Memory System
 
 ```python
-class Memory:
+class MemoryEntry(BaseModel):
+    """Metadata + payload for a single memory slot."""
+
+    key: str
+    description: str
+    value: Any
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    last_accessed: float = Field(default_factory=time.time)
+
+
+class Memory(BaseModel):
     """
     Fast memory system for agents.
-    Stores key-value pairs that persist across iterations.
+    Stores MemoryEntry objects and surfaces a lightweight catalog to the LLM.
     """
 
-    store: Dict[str, Any] = {}
+    store: Dict[str, MemoryEntry] = Field(default_factory=dict)
 
-    async def read(self, key: Optional[str] = None) -> Any:
-        """Read from memory (specific key or all)"""
-        if key:
-            return self.store.get(key)
-        return self.store
+    def has_entries(self) -> bool:
+        return len(self.store) > 0
 
-    async def write(self, key: str, value: Any) -> None:
-        """Write to memory"""
-        self.store[key] = value
+    async def list_entries(self) -> List[Dict[str, Any]]:
+        """
+        Return summaries so model can decide what to load.
+        Each summary includes key, description, and optional tags/metadata.
+        """
+        catalog = []
+        for entry in self.store.values():
+            catalog.append(
+                {
+                    "key": entry.key,
+                    "description": entry.description,
+                    "metadata": entry.metadata,
+                }
+            )
+        return catalog
+
+    async def read(self, keys: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Read specific memory entries (or all when keys is None)."""
+        if not keys:
+            keys = list(self.store.keys())
+        payload = {}
+        for key in keys:
+            if key in self.store:
+                entry = self.store[key]
+                entry.last_accessed = time.time()
+                payload[key] = entry.value
+        return payload
+
+    async def write(
+        self,
+        key: str,
+        value: Any,
+        description: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Write/update memory and keep catalog metadata fresh."""
+        if key in self.store:
+            entry = self.store[key]
+            entry.value = value
+            if description:
+                entry.description = description
+            if metadata:
+                entry.metadata.update(metadata)
+            entry.last_accessed = time.time()
+        else:
+            self.store[key] = MemoryEntry(
+                key=key,
+                description=description or key,
+                value=value,
+                metadata=metadata or {},
+            )
 
     async def clear(self) -> None:
-        """Clear memory"""
+        """Clear memory."""
         self.store.clear()
 ```
 
 #### Memory Integration
 ```python
-# In Agent._think():
-# 1. At loop start: optionally read memory
-if self.memory:
-    memory_context = await self.memory.read()
-    context["memory"] = memory_context
+class MemoryDecision(BaseModel):
+    should_use_memory: bool
+    selected_keys: List[str] = []
+    rationale: str
 
-# 2. After tool execution: optionally update memory
-if self.memory and thought.memory_updates:
-    for key, value in thought.memory_updates.items():
-        await self.memory.write(key, value)
+
+async def _prepare_memory_snapshot(self, goal: Any) -> Optional[Dict[str, Any]]:
+    """
+    Lightweight LLM call that lets the model opt-in to loading memory.
+    Returns hydrated entries or None when memory is skipped.
+    """
+
+    catalog = await self.context.memory.list_entries()
+    decision_response = await self.opper.call(
+        name="memory_router",
+        instructions=self._memory_router_instructions(),
+        input={
+            "goal": str(goal),
+            "memory_catalog": catalog,
+            "recent_history": self.context.get_last_iterations_summary(2),
+        },
+        output_schema=MemoryDecision,
+        model=self.model,
+        parent_span_id=self.context.trace_id,
+    )
+
+    decision = MemoryDecision(**decision_response.json_payload)
+    if not decision.should_use_memory or not decision.selected_keys:
+        return None
+
+    return await self.context.memory.read(decision.selected_keys)
+
+
+def _memory_router_instructions(self) -> str:
+    return """Decide if any memory should be loaded for the next reasoning step.
+- Return should_use_memory=true only when a listed memory clearly helps.
+- selected_keys must only contain keys from memory_catalog.
+- Keep rationale concise.
+"""
+
+
+# After tool execution: optionally update memory
+if self.context.memory and thought.memory_updates:
+    for key, update in thought.memory_updates.items():
+        await self.context.memory.write(**update)
 ```
 
 ### 3.2 Tool Result Cleaning
@@ -449,6 +599,7 @@ class ToolResultCleaner:
     """
 
     threshold: int = 1000  # chars
+    model: str = "groq/llama-3.1-8b-instant"  # Default fast model, user-configurable
 
     async def clean(
         self,
@@ -471,7 +622,7 @@ class ToolResultCleaner:
                 "goal": goal,
                 "tool_result": str(result.result)
             },
-            model="groq/gpt-oss-120b",  # Fast, cheap model
+            model=self.model,  # User-configurable model
             parent_span_id=parent_span_id
         )
 
@@ -488,107 +639,97 @@ class ToolResultCleaner:
 ### 4.1 Simplified MCP Architecture
 
 ```python
-class MCPServerConfig:
-    """Configuration for MCP server"""
+class MCPServerConfig(BaseModel):
+    """Configuration for an MCP server."""
+
     name: str
-    transport: str  # "stdio" or "http-sse"
+    transport: Literal["stdio", "http-sse"]
     url: Optional[str] = None  # For http-sse
     command: Optional[str] = None  # For stdio
-    args: List[str] = []
+    args: List[str] = Field(default_factory=list)
+    env: Dict[str, str] = Field(default_factory=dict)
     timeout: float = 30.0
 
-class MCPToolManager:
-    """
-    Simplified MCP tool manager.
-    Handles connections and provides tools.
-    """
 
-    servers: Dict[str, MCPServerConfig] = {}
-    clients: Dict[str, MCPClient] = {}
+class MCPToolProvider(ToolProvider):
+    """ToolProvider that encapsulates MCP servers."""
 
-    def add_server(self, config: MCPServerConfig) -> None:
-        """Add MCP server config"""
-        self.servers[config.name] = config
+    def __init__(
+        self,
+        configs: Sequence[MCPServerConfig],
+        *,
+        name_prefix: Optional[str] = None,
+    ) -> None:
+        self.configs = list(configs)
+        self.name_prefix = name_prefix
+        self.clients: Dict[str, MCPClient] = {}
 
-    async def connect_all(self) -> None:
-        """Connect to all configured servers"""
-        for name, config in self.servers.items():
+    async def setup(self, agent: "BaseAgent") -> List[Tool]:
+        """Connect to servers and return wrapped MCP tools."""
+        tools: List[Tool] = []
+        for config in self.configs:
             client = self._create_client(config)
             await client.connect()
-            self.clients[name] = client
+            self.clients[config.name] = client
 
-    async def disconnect_all(self) -> None:
-        """Disconnect all servers"""
+            for mcp_tool in await client.list_tools():
+                tools.append(self._wrap_tool(config.name, mcp_tool))
+
+        return tools
+
+    async def teardown(self) -> None:
+        """Disconnect from all servers."""
         for client in self.clients.values():
             await client.disconnect()
         self.clients.clear()
 
-    def get_all_tools(self) -> List[FunctionTool]:
-        """Get all tools from all servers"""
-        tools = []
-        for name, client in self.clients.items():
-            mcp_tools = client.get_tools()
-            # Convert MCP tools to FunctionTools
-            tools.extend(self._convert_tools(name, mcp_tools))
-        return tools
+    def _create_client(self, config: MCPServerConfig) -> MCPClient:
+        return MCPClient.from_config(config)
 
-    def _convert_tools(
-        self,
-        server_name: str,
-        mcp_tools: List[MCPTool]
-    ) -> List[FunctionTool]:
-        """Convert MCP tools to agent FunctionTools"""
-        converted = []
-        for mcp_tool in mcp_tools:
-            tool = self._wrap_mcp_tool(server_name, mcp_tool)
-            converted.append(tool)
-        return converted
+    def _wrap_tool(self, server_name: str, mcp_tool: MCPTool) -> FunctionTool:
+        prefix = self.name_prefix or server_name
+        tool_name = f"{prefix}:{mcp_tool.name}"
 
-    def _wrap_mcp_tool(
-        self,
-        server_name: str,
-        mcp_tool: MCPTool
-    ) -> FunctionTool:
-        """Wrap MCP tool as FunctionTool"""
-
-        async def tool_func(**kwargs) -> Any:
+        async def tool_func(**kwargs: Any) -> Any:
             client = self.clients[server_name]
-            result = await client.call_tool(
-                mcp_tool.name,
-                kwargs
-            )
-            return result
+            return await client.call_tool(mcp_tool.name, kwargs)
 
         return FunctionTool(
             func=tool_func,
-            name=f"{server_name}_{mcp_tool.name}",
+            name=tool_name,
             description=mcp_tool.description,
-            parameters=mcp_tool.parameters
+            parameters=mcp_tool.parameters,
         )
+
+
+def mcp(*configs: MCPServerConfig, name_prefix: Optional[str] = None) -> MCPToolProvider:
+    """Helper so users can write tools = [mcp(config), my_tool]."""
+    if not configs:
+        raise ValueError("At least one MCPServerConfig is required")
+    return MCPToolProvider(configs, name_prefix=name_prefix)
 ```
 
 ### 4.2 Usage Pattern
 
 ```python
-# Simple MCP integration
-mcp = MCPToolManager()
-mcp.add_server(MCPServerConfig(
+search = MCPServerConfig(
     name="search",
     transport="http-sse",
-    url="https://mcp-server.com/endpoint"
-))
-
-await mcp.connect_all()
-tools = mcp.get_all_tools()
+    url="https://mcp-server.com/endpoint",
+)
 
 agent = Agent(
     name="SearchAgent",
-    tools=tools,
-    ...
+    tools=[
+        mcp(search),
+        my_local_tool,
+    ],
+    ...,
 )
-
-# Cleanup
-await mcp.disconnect_all()
+# BaseAgent will activate providers during process():
+# - connect MCP servers
+# - surface FunctionTools
+# - disconnect on teardown
 ```
 
 ---
@@ -712,9 +853,53 @@ class ChatAgent(BaseAgent):
 
 ---
 
-## Phase 6: Testing & Documentation
+## Phase 6: Error Handling Strategy
 
-### 6.1 Test Structure
+### 6.1 Error Handling Principles
+
+The SDK should gracefully handle errors at multiple levels:
+
+#### Agent-Level Errors
+- LLM call failures: Retry with exponential backoff (configurable)
+- Tool provider setup/teardown failures: Log and continue with available tools
+- Max iterations exceeded: Return partial result with clear error message
+- Invalid input/output schema: Validate early, fail fast with helpful messages
+
+#### Tool-Level Errors
+- Tool execution failures: Return ToolResult with success=False and error message
+- Invalid tool calls from LLM: Log warning, skip tool, continue execution
+- Tool timeouts: Configurable per-tool, fail gracefully
+
+#### Hook-Level Errors
+- Hook failures never break execution
+- Log warnings but continue agent flow
+- Provide hook error callback option for monitoring
+
+#### Memory-Level Errors
+- Memory read/write failures: Degrade gracefully, continue without memory
+- Invalid memory keys: Log warning, skip operation
+
+### 6.2 Testing Strategy
+
+Each error scenario should have explicit test coverage:
+- Unit tests for error conditions in isolation
+- Integration tests for error propagation
+- E2E tests for graceful degradation under failure
+- Timeout tests for all async operations
+
+**Key Test Scenarios:**
+- Opper API unavailable
+- Tool provider connection failure
+- Malformed LLM responses
+- Infinite loops / max iterations
+- Memory corruption
+- Nested agent failures
+
+---
+
+## Phase 7: Testing & Documentation
+
+### 7.1 Test Structure
 
 ```
 tests/
@@ -735,7 +920,7 @@ tests/
     └── test_react_agent.py
 ```
 
-### 6.2 Test Coverage Requirements
+### 7.2 Test Coverage Requirements
 
 - Unit tests: >90% coverage
 - All public APIs tested
@@ -769,7 +954,7 @@ tests/
 - [ ] Unit tests
 
 ### Phase 4: MCP Integration (Week 4-5)
-- [ ] Simplified `MCPToolManager`
+- [ ] Simplified `MCPToolProvider`
 - [ ] HTTP-SSE and stdio support
 - [ ] Tool conversion logic
 - [ ] MCP integration tests
@@ -780,7 +965,13 @@ tests/
 - [ ] Multi-agent improvements
 - [ ] E2E tests
 
-### Phase 6: Polish & Docs (Week 6-7)
+### Phase 6: Error Handling (Week 6)
+- [ ] Implement error handling strategy
+- [ ] Add retry logic for LLM calls
+- [ ] Graceful degradation tests
+- [ ] Error propagation tests
+
+### Phase 7: Polish & Docs (Week 7)
 - [ ] Comprehensive testing
 - [ ] Documentation
 - [ ] Examples
@@ -815,7 +1006,7 @@ src/opper_agent/
 │   └── cleaner.py        # ToolResultCleaner
 ├── mcp/
 │   ├── __init__.py
-│   ├── manager.py        # MCPToolManager
+│   ├── provider.py       # MCPToolProvider
 │   ├── client.py         # MCP clients
 │   └── config.py         # MCPServerConfig
 └── utils/
@@ -891,12 +1082,12 @@ src/opper_agent/
    ```python
    # Old: Implicit connections, unclear lifecycle
 
-   # New: Explicit connections, clear lifecycle
-   mcp = MCPToolManager()
-   mcp.add_server(config)
-   await mcp.connect_all()
-   tools = mcp.get_all_tools()
-   await mcp.disconnect_all()
+   # New: Declarative provider bundled as a tool
+   tools = [
+       mcp(config),  # handles connect/disconnect automatically
+       local_tool,
+   ]
+   agent = Agent(name="Search", tools=tools)
    ```
 
 ---

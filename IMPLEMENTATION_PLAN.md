@@ -109,7 +109,7 @@ class AgentContext(BaseModel):
     usage: Usage = Field(default_factory=Usage, description="Token usage stats")
 
     # Memory (optional, will be None if not enabled)
-    memory: Optional[Dict[str, Any]] = Field(
+    memory: Optional["Memory"] = Field(
         default=None,
         description="Agent memory store"
     )
@@ -145,6 +145,23 @@ class AgentContext(BaseModel):
     def get_last_n_cycles(self, n: int = 3) -> List[ExecutionCycle]:
         """Get last N execution cycles for context."""
         return self.execution_history[-n:] if self.execution_history else []
+
+    def get_last_iterations_summary(self, n: int = 2) -> List[Dict[str, Any]]:
+        """Condensed view of recent iterations for LLM context."""
+        summary: List[Dict[str, Any]] = []
+        for cycle in self.execution_history[-n:]:
+            summary.append(
+                {
+                    "iteration": cycle.iteration,
+                    "thought": getattr(cycle.thought, "reasoning", str(cycle.thought)),
+                    "tool_calls": [call.name for call in getattr(cycle, "tool_calls", [])],
+                    "results": [
+                        {"tool": result.tool_name, "success": result.success}
+                        for result in getattr(cycle, "results", [])
+                    ],
+                }
+            )
+        return summary
 
     def clear_history(self) -> None:
         """Clear execution history (useful for long-running agents)."""
@@ -193,7 +210,7 @@ def test_context_usage_tracking():
 ```python
 # src/opper_agent/base/tool.py
 from pydantic import BaseModel, Field
-from typing import Dict, Any, Callable, Optional
+from typing import Dict, Any, Callable, Optional, List, Union, Sequence, Protocol, Tuple
 from abc import ABC, abstractmethod
 import inspect
 import asyncio
@@ -326,6 +343,37 @@ class FunctionTool(Tool):
             )
 ```
 
+#### Tool Providers
+```python
+from typing import Protocol, Sequence, Tuple
+
+class ToolProvider(Protocol):
+    """Expands into tools at runtime (e.g. MCP bundles)."""
+
+    async def setup(self, agent: "BaseAgent") -> List[Tool]:
+        """Connect resources and return concrete tools."""
+
+    async def teardown(self) -> None:
+        """Cleanup after the agent run finishes."""
+
+
+def normalize_tools(
+    raw: Sequence[Union[Tool, ToolProvider]]
+) -> Tuple[List[Tool], List[ToolProvider]]:
+    """Utility to split concrete tools from providers."""
+
+    tools: List[Tool] = []
+    providers: List[ToolProvider] = []
+    for item in raw:
+        if isinstance(item, Tool):
+            tools.append(item)
+        elif hasattr(item, "setup") and hasattr(item, "teardown"):
+            providers.append(item)
+        else:
+            raise TypeError(f"Unsupported tool item: {item!r}")
+    return tools, providers
+```
+
 **Tests:**
 
 ```python
@@ -382,6 +430,7 @@ def test_parameter_extraction():
 # src/opper_agent/base/hooks.py
 from typing import Dict, List, Callable, Any
 from .context import AgentContext
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -406,6 +455,7 @@ class HookEvents:
 
     LLM_CALL = "llm_call"
     LLM_RESPONSE = "llm_response"
+    THINK_END = "think_end"
 
 
 class HookManager:
@@ -639,7 +689,7 @@ def test_hook_decorator():
 ```python
 # src/opper_agent/base/agent.py
 from abc import ABC, abstractmethod
-from typing import List, Optional, Any, Type, Union
+from typing import List, Optional, Any, Type, Union, Sequence, Dict, Callable
 from pydantic import BaseModel
 from opperai import Opper
 import os
@@ -668,7 +718,7 @@ class BaseAgent(ABC):
         name: str,
         description: Optional[str] = None,
         instructions: Optional[str] = None,
-        tools: Optional[List[Tool]] = None,
+        tools: Optional[Sequence[Union[Tool, "ToolProvider"]]] = None,
         input_schema: Optional[Type[BaseModel]] = None,
         output_schema: Optional[Type[BaseModel]] = None,
         hooks: Optional[Union[List[Callable], HookManager]] = None,
@@ -706,7 +756,11 @@ class BaseAgent(ABC):
         self.output_schema = output_schema
 
         # Tools
-        self.tools: List[Tool] = tools or []
+        self.base_tools: List[Tool] = []
+        self.tool_providers: List["ToolProvider"] = []
+        self.active_provider_tools: Dict["ToolProvider", List[Tool]] = {}
+        self.tools: List[Tool] = []
+        self._initialize_tools(tools or [])
 
         # Opper client
         api_key = opper_api_key or os.getenv("OPPER_API_KEY")
@@ -738,10 +792,41 @@ class BaseAgent(ABC):
 
         return manager
 
+    def _initialize_tools(self, raw_tools: Sequence[Union[Tool, "ToolProvider"]]) -> None:
+        """Separate concrete tools from providers."""
+        for item in raw_tools:
+            if isinstance(item, Tool):
+                self.base_tools.append(item)
+                self.tools.append(item)
+            elif hasattr(item, "setup") and hasattr(item, "teardown"):
+                self.tool_providers.append(item)
+            else:
+                raise TypeError(f"Unsupported tool type: {item!r}")
+
+    async def _activate_tool_providers(self) -> None:
+        """Connect providers and register their tools."""
+        for provider in self.tool_providers:
+            provided = await provider.setup(self)
+            self.active_provider_tools[provider] = provided
+            for tool in provided:
+                self.add_tool(tool, as_base=False)
+
+    async def _deactivate_tool_providers(self) -> None:
+        """Disconnect providers and remove their tools."""
+        for provider, tools in self.active_provider_tools.items():
+            for tool in tools:
+                if tool in self.tools:
+                    self.tools.remove(tool)
+            await provider.teardown()
+        self.active_provider_tools.clear()
+
     # Tool management
-    def add_tool(self, tool: Tool) -> None:
+    def add_tool(self, tool: Tool, *, as_base: bool = True) -> None:
         """Add a tool to the agent."""
-        self.tools.append(tool)
+        if as_base:
+            self.base_tools.append(tool)
+        if tool not in self.tools:
+            self.tools.append(tool)
 
     def get_tool(self, name: str) -> Optional[Tool]:
         """Get tool by name."""
@@ -878,7 +963,41 @@ async def test_agent_as_tool():
     tool = agent.as_tool()
     assert isinstance(tool, FunctionTool)
     assert "SubAgent" in tool.name
+
+@pytest.mark.asyncio
+async def test_nested_agent_execution():
+    """Test agent-as-tool in nested event loop scenarios"""
+    sub_agent = TestAgent(name="SubAgent", tools=[dummy_tool])
+    main_agent = TestAgent(name="MainAgent", tools=[sub_agent.as_tool()])
+
+    result = await main_agent.process("test task")
+    assert result is not None
+
+@pytest.mark.asyncio
+async def test_agent_as_tool_timeout():
+    """Test timeout handling for agent tools"""
+    # Test that agent-as-tool respects timeout and fails gracefully
+    pass
+
+@pytest.mark.asyncio
+async def test_agent_as_tool_error_propagation():
+    """Test error propagation from sub-agent to parent"""
+    # Ensure errors bubble up correctly through agent hierarchy
+    pass
 ```
+
+**Note on `as_tool()` Implementation:**
+
+The current event loop handling approach (using ThreadPoolExecutor for nested event loops) is the most robust solution for our multi-agent requirements. This ensures:
+- Sub-agents can be called from within async agent execution
+- Proper isolation between parent/child agent contexts
+- No event loop conflicts
+
+Critical testing areas:
+- Nested agent calls (agent calling agent calling agent)
+- Error propagation through agent hierarchy
+- Timeout behavior at each level
+- Context isolation between parent and child agents
 
 ---
 
@@ -918,9 +1037,9 @@ class Thought(BaseModel):
         default="Working on it...",
         description="Status message for user"
     )
-    memory_updates: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Optional updates to agent memory"
+    memory_updates: Dict[str, Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Memory writes the model wants to perform (key -> payload)"
     )
 ```
 
@@ -933,6 +1052,7 @@ import time
 
 from ..base.agent import BaseAgent
 from ..base.context import AgentContext, ExecutionCycle
+from ..memory.memory import Memory
 from ..base.hooks import HookEvents
 from ..base.tool import ToolResult
 from .schemas import Thought, ToolCall
@@ -976,24 +1096,28 @@ class Agent(BaseAgent):
         self.context = AgentContext(
             agent_name=self.name,
             goal=input,
-            memory={} if self.enable_memory else None
+            memory=Memory() if self.enable_memory else None
         )
 
-        # Start trace
-        trace = self.start_trace(
-            name=f"{self.name}_execution",
-            input_data=input
-        )
-        self.context.trace_id = trace.id
-
-        # Trigger: agent_start
-        await self.hook_manager.trigger(
-            HookEvents.AGENT_START,
-            self.context,
-            agent=self
-        )
+        trace = None
 
         try:
+            await self._activate_tool_providers()
+
+            # Start trace
+            trace = self.start_trace(
+                name=f"{self.name}_execution",
+                input_data=input
+            )
+            self.context.trace_id = trace.id
+
+            # Trigger: agent_start
+            await self.hook_manager.trigger(
+                HookEvents.AGENT_START,
+                self.context,
+                agent=self
+            )
+
             # Run main loop
             result = await self._run_loop(input)
 
@@ -1005,11 +1129,12 @@ class Agent(BaseAgent):
                 result=result
             )
 
-            # Update trace
-            self.opper.spans.update(
-                span_id=trace.id,
-                output=str(result)
-            )
+            if trace:
+                # Update trace output after successful completion
+                self.opper.spans.update(
+                    span_id=trace.id,
+                    output=str(result)
+                )
 
             return result
 
@@ -1022,6 +1147,8 @@ class Agent(BaseAgent):
                 error=e
             )
             raise
+        finally:
+            await self._deactivate_tool_providers()
 
     async def _run_loop(self, goal: Any) -> Any:
         """
@@ -1072,7 +1199,13 @@ class Agent(BaseAgent):
 
             # Update memory if needed
             if self.enable_memory and thought.memory_updates:
-                self.context.memory.update(thought.memory_updates)
+                for key, update in thought.memory_updates.items():
+                    await self.context.memory.write(
+                        key=key,
+                        value=update.get("value"),
+                        description=update.get("description"),
+                        metadata=update.get("metadata"),
+                    )
 
             # Trigger: loop_end
             await self.hook_manager.trigger(
@@ -1089,6 +1222,11 @@ class Agent(BaseAgent):
 
     async def _think(self, goal: Any) -> Thought:
         """Call LLM to reason about next actions."""
+
+        # Optional: build lightweight memory snapshot for LLM
+        memory_snapshot = None
+        if self.enable_memory and self.context.memory and self.context.memory.has_entries():
+            memory_snapshot = await self._prepare_memory_snapshot(goal)
 
         # Build context
         context = {
@@ -1116,7 +1254,7 @@ class Agent(BaseAgent):
             ],
             "current_iteration": self.context.iteration + 1,
             "max_iterations": self.max_iterations,
-            "memory": self.context.memory if self.enable_memory else None
+            "memory": memory_snapshot
         }
 
         instructions = """You are in a Think-Act reasoning loop.
@@ -1142,7 +1280,7 @@ IMPORTANT:
         )
 
         # Call Opper
-        response = self.opper.call(
+        response = await self.opper.call(
             name="think",
             instructions=instructions,
             input=context,
@@ -1164,7 +1302,17 @@ IMPORTANT:
             response=response
         )
 
-        return Thought(**response.json_payload)
+        thought = Thought(**response.json_payload)
+
+        # Trigger: think_end
+        await self.hook_manager.trigger(
+            HookEvents.THINK_END,
+            self.context,
+            agent=self,
+            thought=thought
+        )
+
+        return thought
 
     async def _execute_tool(self, tool_call: ToolCall) -> ToolResult:
         """Execute a single tool call."""
@@ -1235,7 +1383,7 @@ IMPORTANT:
         instructions = """Generate the final result based on the execution history.
 Follow any instructions provided for formatting and style."""
 
-        response = self.opper.call(
+        response = await self.opper.call(
             name="generate_final_result",
             instructions=instructions,
             input=context,
@@ -1249,8 +1397,261 @@ Follow any instructions provided for formatting and style."""
         return response.message
 ```
 
-This plan continues with more detailed implementation steps for each phase. Would you like me to:
+### Task 3.3: Memory System
 
-1. Continue with the remaining phases (MCP, Memory, Testing)?
-2. Focus on any specific component in more detail?
-3. Create skeleton code files to get started?
+**Implementation:**
+
+```python
+# src/opper_agent/memory/memory.py
+from __future__ import annotations
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field
+import time
+
+class MemoryEntry(BaseModel):
+    """Single memory slot with metadata."""
+
+    key: str
+    description: str
+    value: Any
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    last_accessed: float = Field(default_factory=time.time)
+
+
+class Memory(BaseModel):
+    """Fast in-memory store that exposes a catalog to the LLM."""
+
+    store: Dict[str, MemoryEntry] = Field(default_factory=dict)
+
+    def has_entries(self) -> bool:
+        return len(self.store) > 0
+
+    async def list_entries(self) -> List[Dict[str, Any]]:
+        """Summaries so the LLM can decide whether to load anything."""
+        catalog: List[Dict[str, Any]] = []
+        for entry in self.store.values():
+            catalog.append(
+                {
+                    "key": entry.key,
+                    "description": entry.description,
+                    "metadata": entry.metadata,
+                }
+            )
+        return catalog
+
+    async def read(self, keys: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Return payloads for the selected keys (or all when keys is None)."""
+        if not keys:
+            keys = list(self.store.keys())
+        snapshot: Dict[str, Any] = {}
+        for key in keys:
+            if key in self.store:
+                entry = self.store[key]
+                entry.last_accessed = time.time()
+                snapshot[key] = entry.value
+        return snapshot
+
+    async def write(
+        self,
+        key: str,
+        value: Any,
+        description: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Insert or update a memory entry."""
+        if key in self.store:
+            entry = self.store[key]
+            entry.value = value
+            if description:
+                entry.description = description
+            if metadata:
+                entry.metadata.update(metadata)
+            entry.last_accessed = time.time()
+        else:
+            self.store[key] = MemoryEntry(
+                key=key,
+                description=description or key,
+                value=value,
+                metadata=metadata or {},
+            )
+
+    async def clear(self) -> None:
+        """Clear all memory entries."""
+        self.store.clear()
+```
+
+**Tests:**
+
+```python
+# tests/unit/test_memory.py
+import pytest
+from opper_agent.memory.memory import Memory
+
+@pytest.mark.asyncio
+async def test_memory_read_write():
+    memory = Memory()
+    await memory.write("project", {"status": "in_progress"}, description="Project snapshot")
+
+    catalog = await memory.list_entries()
+    assert catalog[0]["key"] == "project"
+
+    payload = await memory.read(["project"])
+    assert payload["project"]["status"] == "in_progress"
+```
+
+### Task 3.4: Memory Router Helpers
+
+**Implementation:**
+
+```python
+# src/opper_agent/core/schemas.py (append below Thought)
+class MemoryDecision(BaseModel):
+    """Structure returned by the memory router LLM call."""
+
+    should_use_memory: bool = Field(description="Whether memory should be loaded")
+    selected_keys: List[str] = Field(default_factory=list, description="Keys to load")
+    rationale: str = Field(description="Short reason for the decision")
+```
+
+```python
+# src/opper_agent/core/agent.py (inside Agent)
+    async def _prepare_memory_snapshot(self, goal: Any) -> Optional[Dict[str, Any]]:
+        """Let the LLM decide whether to hydrate memory before think."""
+
+        catalog = await self.context.memory.list_entries()
+        if not catalog:
+            return None
+
+        response = await self.opper.call(
+            name="memory_router",
+            instructions=self._memory_router_instructions(),
+            input={
+                "goal": str(goal),
+                "memory_catalog": catalog,
+                "recent_history": self.context.get_last_iterations_summary(2),
+            },
+            output_schema=MemoryDecision,
+            model=self.model,
+            parent_span_id=self.context.trace_id,
+        )
+
+        decision = MemoryDecision(**response.json_payload)
+        if not decision.should_use_memory or not decision.selected_keys:
+            return None
+
+        return await self.context.memory.read(decision.selected_keys)
+
+    def _memory_router_instructions(self) -> str:
+        return """Decide if any memory entries should be loaded for the next reasoning step.
+- Only set should_use_memory=true when an entry clearly helps.
+- selected_keys must come from memory_catalog.
+- Keep the rationale concise."""
+```
+
+```python
+# src/opper_agent/core/agent.py (_run_loop memory updates)
+            if self.enable_memory and thought.memory_updates:
+                for key, update in thought.memory_updates.items():
+                    await self.context.memory.write(
+                        key=key,
+                        value=update.get("value"),
+                        description=update.get("description"),
+                        metadata=update.get("metadata"),
+                    )
+```
+
+### Task 4.1: MCP Tool Provider
+
+**Implementation:**
+
+```python
+# src/opper_agent/mcp/config.py
+from pydantic import BaseModel, Field
+from typing import Dict, List, Literal, Optional
+
+class MCPServerConfig(BaseModel):
+    """Declarative configuration for an MCP server."""
+
+    name: str
+    transport: Literal["stdio", "http-sse"]
+    url: Optional[str] = None
+    command: Optional[str] = None
+    args: List[str] = Field(default_factory=list)
+    env: Dict[str, str] = Field(default_factory=dict)
+    timeout: float = 30.0
+```
+
+```python
+# src/opper_agent/mcp/provider.py
+from typing import Sequence, Optional, Dict, List, Any
+
+from ..base.tool import FunctionTool, Tool, ToolProvider
+from ..base.agent import BaseAgent
+from .config import MCPServerConfig
+from .client import MCPClient, MCPTool
+
+class MCPToolProvider(ToolProvider):
+    """ToolProvider wrapper around one or more MCP servers."""
+
+    def __init__(self, configs: Sequence[MCPServerConfig], *, name_prefix: Optional[str] = None) -> None:
+        self.configs = list(configs)
+        self.name_prefix = name_prefix
+        self.clients: Dict[str, MCPClient] = {}
+
+    async def setup(self, agent: BaseAgent) -> List[Tool]:
+        tools: List[Tool] = []
+        for config in self.configs:
+            client = MCPClient.from_config(config)
+            await client.connect()
+            self.clients[config.name] = client
+
+            for mcp_tool in await client.list_tools():
+                tools.append(self._wrap_tool(config.name, mcp_tool))
+        return tools
+
+    async def teardown(self) -> None:
+        for client in self.clients.values():
+            await client.disconnect()
+        self.clients.clear()
+
+    def _wrap_tool(self, server_name: str, mcp_tool: MCPTool) -> FunctionTool:
+        prefix = self.name_prefix or server_name
+        tool_name = f"{prefix}:{mcp_tool.name}"
+
+        async def tool_func(**kwargs: Any) -> Any:
+            client = self.clients[server_name]
+            return await client.call_tool(mcp_tool.name, kwargs)
+
+        return FunctionTool(
+            func=tool_func,
+            name=tool_name,
+            description=mcp_tool.description,
+            parameters=mcp_tool.parameters,
+        )
+
+
+def mcp(*configs: MCPServerConfig, name_prefix: Optional[str] = None) -> MCPToolProvider:
+    """Helper so callers can write tools = [mcp(config), local_tool]."""
+    if not configs:
+        raise ValueError("At least one MCPServerConfig is required")
+    return MCPToolProvider(configs, name_prefix=name_prefix)
+```
+
+**Usage Example:**
+
+```python
+from opper_agent.mcp.config import MCPServerConfig
+from opper_agent.mcp.provider import mcp
+
+search = MCPServerConfig(name="search", transport="http-sse", url="https://mcp.example.com")
+
+agent = Agent(
+    name="SearchAgent",
+    tools=[
+        mcp(search),
+        my_local_tool,
+    ],
+)
+```
+
+During `process()` the agent will activate the provider, connect to MCP servers, expose wrapped tools, and automatically disconnect during teardown.
