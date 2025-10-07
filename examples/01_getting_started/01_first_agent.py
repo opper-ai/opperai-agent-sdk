@@ -12,14 +12,14 @@ from opper_agent import Agent, tool
 @tool
 def add(a: int, b: int) -> int:
     """Add two numbers together."""
-    print(f"🔧 Tool called: add({a}, {b})")
+    print(f"Tool called: add({a}, {b})")
     return a + b
 
 
 @tool
 def multiply(x: int, y: int) -> int:
     """Multiply two numbers together."""
-    print(f"🔧 Tool called: multiply({x}, {y})")
+    print(f"Tool called: multiply({x}, {y})")
     return x * y
 
 
@@ -28,12 +28,12 @@ async def main():
 
     # Check for API key
     if not os.getenv("OPPER_API_KEY"):
-        print("❌ Error: OPPER_API_KEY environment variable not set")
+        print("Error: OPPER_API_KEY environment variable not set")
         print("\nPlease set it with:")
         print("  export OPPER_API_KEY='your-key-here'")
         return
 
-    print("✅ OPPER_API_KEY found")
+    print("OPPER_API_KEY found")
     print("\n" + "=" * 60)
     print("Testing Agent with Simple Math Task")
     print("=" * 60 + "\n")
