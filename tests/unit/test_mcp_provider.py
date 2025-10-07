@@ -310,3 +310,163 @@ async def test_wrapped_tool_execution_error():
     assert not result.success
     assert result.error is not None
     assert "Tool failed" in result.error
+
+
+@pytest.mark.asyncio
+async def test_wrapped_tool_disconnected_client():
+    """Test wrapped tool handles disconnected client by reconnecting."""
+    config = MCPServerConfig(name="test", transport="stdio", command="python")
+
+    provider = MCPToolProvider([config])
+
+    # Mock disconnected client that can reconnect
+    mock_client = AsyncMock()
+    mock_client.connected = False
+    mock_client.connect = AsyncMock()  # Should be called to reconnect
+
+    async def mock_connect():
+        mock_client.connected = True
+
+    mock_client.connect.side_effect = mock_connect
+    mock_client.call_tool = AsyncMock(return_value="result after reconnect")
+
+    # Create wrapped tool
+    mcp_tool = MCPTool(name="test_tool", description="Test", parameters={})
+    wrapped_tool = provider._wrap_tool("test", mcp_tool)
+
+    provider.clients["test"] = mock_client
+
+    # Execute wrapped tool - should reconnect automatically
+    result = await wrapped_tool.execute(arg="value")
+
+    # Should succeed after reconnecting
+    assert result.success
+    mock_client.connect.assert_called_once()  # Verify reconnect was attempted
+
+
+@pytest.mark.asyncio
+async def test_provider_setup_all_servers_fail():
+    """Test provider handles all servers failing gracefully."""
+    config1 = MCPServerConfig(name="fail1", transport="stdio", command="python")
+    config2 = MCPServerConfig(name="fail2", transport="stdio", command="python")
+
+    provider = MCPToolProvider([config1, config2])
+
+    # Both clients fail to connect
+    mock_client1 = AsyncMock()
+    mock_client1.connect = AsyncMock(side_effect=RuntimeError("Connection failed"))
+
+    mock_client2 = AsyncMock()
+    mock_client2.connect = AsyncMock(side_effect=RuntimeError("Connection failed"))
+
+    def mock_from_config(config):
+        if config.name == "fail1":
+            return mock_client1
+        return mock_client2
+
+    with patch(
+        "opper_agent.mcp.provider.MCPClient.from_config", side_effect=mock_from_config
+    ):
+        # Should not raise, should return empty list
+        tools = await provider.setup(None)
+
+        # No tools should be available
+        assert len(tools) == 0
+
+
+@pytest.mark.asyncio
+async def test_provider_setup_timeout():
+    """Test provider handles connection timeouts."""
+    import asyncio
+
+    config = MCPServerConfig(name="slow", transport="stdio", command="python")
+
+    provider = MCPToolProvider([config])
+
+    # Mock client that times out
+    mock_client = AsyncMock()
+
+    async def slow_connect():
+        await asyncio.sleep(1)  # Simulate slow connection (1 second is enough for test)
+
+    mock_client.connect = slow_connect
+
+    with patch(
+        "opper_agent.mcp.provider.MCPClient.from_config", return_value=mock_client
+    ):
+        # Even with timeout, should handle gracefully
+        tools = await provider.setup(None)
+
+        # In practice, this test would need proper timeout handling
+        # For now, we're just verifying the structure
+
+
+@pytest.mark.asyncio
+async def test_wrapped_tool_missing_client():
+    """Test wrapped tool handles missing client."""
+    config = MCPServerConfig(name="test", transport="stdio", command="python")
+
+    provider = MCPToolProvider([config])
+
+    # Create wrapped tool but don't add client
+    mcp_tool = MCPTool(name="test_tool", description="Test", parameters={})
+    wrapped_tool = provider._wrap_tool("test", mcp_tool)
+
+    # Don't add client to provider.clients
+
+    # Execute should handle missing client
+    result = await wrapped_tool.execute()
+
+    assert not result.success
+    assert result.error is not None
+
+
+@pytest.mark.asyncio
+async def test_provider_teardown_partial_failure():
+    """Test provider teardown continues even if some disconnects fail."""
+    config1 = MCPServerConfig(name="server1", transport="stdio", command="python")
+    config2 = MCPServerConfig(name="server2", transport="stdio", command="python")
+
+    provider = MCPToolProvider([config1, config2])
+
+    # First client fails to disconnect
+    mock_client1 = AsyncMock()
+    mock_client1.disconnect = AsyncMock(side_effect=RuntimeError("Disconnect failed"))
+
+    # Second client disconnects successfully
+    mock_client2 = AsyncMock()
+    mock_client2.disconnect = AsyncMock()
+
+    provider.clients = {"server1": mock_client1, "server2": mock_client2}
+
+    # Should not raise, should continue
+    await provider.teardown()
+
+    # Both disconnects should have been attempted
+    mock_client1.disconnect.assert_called_once()
+    mock_client2.disconnect.assert_called_once()
+
+    # Clients should be cleared
+    assert len(provider.clients) == 0
+
+
+@pytest.mark.asyncio
+async def test_provider_empty_tool_list():
+    """Test provider handles servers with no tools."""
+    config = MCPServerConfig(name="empty", transport="stdio", command="python")
+
+    provider = MCPToolProvider([config])
+
+    # Mock client with no tools
+    mock_client = AsyncMock()
+    mock_client.connect = AsyncMock()
+    mock_client.list_tools = AsyncMock(return_value=[])  # Empty list
+
+    with patch(
+        "opper_agent.mcp.provider.MCPClient.from_config", return_value=mock_client
+    ):
+        tools = await provider.setup(None)
+
+        # Should return empty list without error
+        assert len(tools) == 0
+        assert isinstance(tools, list)

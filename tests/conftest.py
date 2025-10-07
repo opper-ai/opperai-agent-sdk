@@ -4,11 +4,13 @@ Pytest configuration and shared fixtures.
 This module provides common fixtures for all tests, including:
 - Event loop management for async tests
 - Mock fixtures for Opper API calls
-- VCR configuration (coming in Phase 3)
+- VCR configuration for integration tests
 """
 
 import asyncio
+import os
 import pytest
+import vcr
 from unittest.mock import AsyncMock, MagicMock
 
 
@@ -71,18 +73,47 @@ def mock_opper_client(monkeypatch):
     return mock
 
 
-# TODO: Add VCR configuration for Phase 3 integration tests
-# @pytest.fixture(scope="module")
-# def vcr_config():
-#     """VCR configuration for recording/replaying HTTP interactions."""
-#     return {
-#         "filter_headers": ["authorization", "x-api-key"],
-#         "record_mode": "once",
-#     }
+@pytest.fixture
+def vcr_cassette(request):
+    """
+    VCR fixture for recording/replaying HTTP interactions in integration tests.
 
-# TODO: Add API key fixture for Phase 3 e2e tests
-# @pytest.fixture
-# def opper_api_key():
-#     """Get Opper API key from environment for e2e tests."""
-#     import os
-#     return os.getenv("OPPER_API_KEY", "test-key")
+    This fixture automatically creates cassettes named after the test function
+    and stores them in tests/fixtures/vcr_cassettes/{module}/{test_name}.yaml
+
+    Usage:
+        @pytest.mark.asyncio
+        async def test_my_integration(vcr_cassette):
+            # HTTP calls will be recorded/replayed automatically
+            pass
+    """
+    test_name = request.node.name
+    module_file = request.module.__file__
+    file_name = os.path.splitext(os.path.basename(module_file))[0]
+
+    cassette_name = f"{file_name}/{test_name}.yaml"
+
+    my_vcr = vcr.VCR(
+        cassette_library_dir="tests/fixtures/vcr_cassettes",
+        path_transformer=vcr.VCR.ensure_suffix(".yaml"),
+        filter_headers=[
+            "authorization",
+            "api-key",
+            "x-opper-api-key",
+        ],
+        ignore_hosts=["testserver"],
+        ignore_localhost=True,
+    )
+
+    with my_vcr.use_cassette(cassette_name):
+        yield
+
+
+@pytest.fixture
+def opper_api_key():
+    """
+    Get Opper API key from environment for integration/e2e tests.
+
+    Falls back to 'test-key' for local development.
+    """
+    return os.getenv("OPPER_API_KEY", "test-key")

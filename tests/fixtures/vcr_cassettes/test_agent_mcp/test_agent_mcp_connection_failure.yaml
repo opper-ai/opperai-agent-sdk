@@ -1,0 +1,41 @@
+interactions:
+- request:
+    body: '{"name":"TestAgent_execution","parent_id":null,"input":"Do something"}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate, br
+      connection:
+      - keep-alive
+      content-length:
+      - '70'
+      content-type:
+      - application/json
+      host:
+      - api.opper.ai
+      user-agent:
+      - speakeasy-sdk/python 1.2.1 2.716.16 2.0.0 opperai
+    method: POST
+    uri: https://api.opper.ai/v2/spans
+  response:
+    body:
+      string: '{"type":"HTTPException","message":"Invalid API key","detail":"Invalid
+        API key"}'
+    headers:
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '79'
+      Content-Type:
+      - application/json
+      Date:
+      - Tue, 07 Oct 2025 10:37:13 GMT
+      server:
+      - uvicorn
+      x-request-id:
+      - 2601eb92-3eb7-4cb0-bb1e-c88107398968
+    status:
+      code: 401
+      message: Unauthorized
+version: 1
