@@ -1,7 +1,18 @@
 """
-Quick test to verify the agent works with all hooks.
+Quick test to show how the Agent works with all hooks.
+Hooks are ways of running code at specific points in the agent's lifecycle.
 
-Run this with: uv run python examples/quick_test_jose.py
+The current hooks available are:
+- on_agent_start
+- on_agent_end
+- on_agent_error
+- on_loop_start
+- on_loop_end
+- on_llm_call
+- on_llm_response
+- on_think_end
+- on_tool_call
+- on_tool_result
 """
 
 import asyncio
@@ -37,7 +48,7 @@ def multiply(x: int, y: int) -> int:
 @tool
 def get_user_input(query: str) -> str:
     """Get user input."""
-    user_response = input(query + "\n")
+    user_response = input("[USER INPUT REQUESTED]\n" + query + "\n")
     return user_response
 
 
@@ -45,7 +56,7 @@ def get_user_input(query: str) -> str:
 @hook("agent_start")
 async def on_agent_start(context: AgentContext, agent: BaseAgent):
     """Called when agent execution starts."""
-    print(f"\nHOOK: Agent '{agent.name}' starting execution")
+    print(f"\nHOOK [on_agent_start]: Agent '{agent.name}' starting execution")
     print(f"   Goal: {context.goal}")
     # context.metadata["start_timestamp"] = asyncio.get_event_loop().time()
 
@@ -56,7 +67,7 @@ async def on_agent_end(context: AgentContext, agent: BaseAgent, result):
     elapsed = asyncio.get_event_loop().time() - context.metadata.get(
         "start_timestamp", 0
     )
-    print(f"\nHOOK: Agent '{agent.name}' completed successfully")
+    print(f"\nHOOK [on_agent_end]: Agent '{agent.name}' completed successfully")
     print(f"   Execution time: {elapsed:.2f}s")
     print(f"   Total iterations: {context.iteration}")
 
@@ -64,13 +75,13 @@ async def on_agent_end(context: AgentContext, agent: BaseAgent, result):
 @hook("agent_error")
 async def on_agent_error(context: AgentContext, agent: BaseAgent, error: Exception):
     """Called when agent encounters an error."""
-    print(f"\nHOOK: Agent '{agent.name}' encountered error: {error}")
+    print(f"\nHOOK [on_agent_error]: Agent '{agent.name}' encountered error: {error}")
 
 
 @hook("loop_start")
 async def on_loop_start(context: AgentContext, agent: BaseAgent):
     """Called at the start of each iteration loop."""
-    print(f"\nHOOK: Loop iteration {context.iteration + 1} starting")
+    print(f"\nHOOK [on_loop_start]: Loop iteration {context.iteration + 1} starting")
 
 
 @hook("loop_end")
@@ -78,6 +89,7 @@ async def on_loop_end(context: AgentContext, agent: BaseAgent):
     """Called at the end of each iteration loop."""
     cycle = context.execution_history[-1] if context.execution_history else None
     if cycle:
+        print(f"   [on_loop_end] Cycle: {cycle}")
         print(f"   Loop iteration {cycle.iteration + 1} completed")
         print(f"   Tools executed: {len(cycle.results)}")
 
@@ -85,7 +97,7 @@ async def on_loop_end(context: AgentContext, agent: BaseAgent):
 @hook("llm_call")
 async def on_llm_call(context: AgentContext, agent: BaseAgent, call_type: str):
     """Called before making an LLM call."""
-    print(f"\nHOOK: Making LLM call (type: {call_type})")
+    print(f"\nHOOK [on_llm_call]: Making LLM call (type: {call_type})")
 
 
 @hook("llm_response")
@@ -93,13 +105,13 @@ async def on_llm_response(
     context: AgentContext, agent: BaseAgent, call_type: str, response
 ):
     """Called after receiving LLM response."""
-    print(f"   LLM response received (type: {call_type})")
+    print(f"   [on_llm_response] LLM response received (type: {call_type})")
 
 
 @hook("think_end")
 async def on_think_end(context: AgentContext, agent: BaseAgent, thought):
     """Called after the think/reasoning step."""
-    print(f"\nHOOK: Thought completed")
+    print(f"\nHOOK [on_think_end]: Thought completed")
     print(f"   Reasoning: {thought.reasoning[:100]}...")
     print(f"   Tool calls planned: {len(thought.tool_calls)}")
 
@@ -109,7 +121,7 @@ async def on_tool_call(
     context: AgentContext, agent: BaseAgent, tool: Tool, parameters: dict
 ):
     """Called before executing a tool."""
-    print(f"\nHOOK: Calling tool '{tool.name}'")
+    print(f"\nHOOK [on_tool_call]: Calling tool '{tool.name}'")
     print(f"   Parameters: {parameters}")
 
 
@@ -119,7 +131,7 @@ async def on_tool_result(
 ):
     """Called after tool execution."""
     status = "✓" if result.success else "✗"
-    print(f"   {status} Tool '{tool.name}' result: {result.result}")
+    print(f"   [on_tool_result] {status} Tool '{tool.name}' result: {result.result}")
     print(f"   Execution time: {result.execution_time:.3f}s")
 
 
@@ -134,15 +146,15 @@ async def main():
         tools=[add, multiply, get_user_input],
         hooks=[
             on_agent_start,
-            # on_agent_end,
-            #     on_agent_error,
-            # on_loop_start,
-            # on_loop_end,
-            # on_llm_call,
-            # on_llm_response,
-            # on_think_end,
-            # on_tool_call,
-            # on_tool_result,
+            on_agent_end,
+            on_agent_error,
+            on_loop_start,
+            on_loop_end,
+            on_llm_call,
+            on_llm_response,
+            on_think_end,
+            on_tool_call,
+            on_tool_result,
         ],
         input_schema=MathProblem,
         output_schema=MathSolution,

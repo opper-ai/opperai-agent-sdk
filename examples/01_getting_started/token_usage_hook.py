@@ -35,7 +35,7 @@ def multiply(x: int, y: int) -> int:
 @tool
 def get_user_input(query: str) -> str:
     """Get user input."""
-    user_response = input(query + "\n")
+    user_response = input("\n\n[USER INPUT REQUESTED]\n\n" + query + "\n")
     return user_response
 
 
