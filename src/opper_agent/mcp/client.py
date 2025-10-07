@@ -211,9 +211,34 @@ class MCPClient:
                 self.config.name,
                 self.config.transport,
             )
-        except Exception:
-            await exit_stack.aclose()
-            raise
+        except Exception as e:
+            # Shield cleanup from AnyIO cancel scopes to preserve the original error
+            # Without this, CancelledError can mask the real connection error
+            import anyio
+
+            try:
+                with anyio.CancelScope(shield=True):
+                    await exit_stack.aclose()
+            except Exception as cleanup_error:
+                logger.debug(
+                    f"Error during cleanup after connection failure: {cleanup_error}"
+                )
+
+            # Extract meaningful error from ExceptionGroup if present
+            # MCP SDK uses AnyIO TaskGroups which wrap errors in ExceptionGroups
+            original_error = e
+            if hasattr(e, "exceptions"):  # ExceptionGroup or BaseExceptionGroup
+                # Find the first non-cancellation error
+                for exc in e.exceptions:
+                    if not isinstance(exc, asyncio.CancelledError):
+                        original_error = exc
+                        break
+
+            # Re-raise the original/extracted connection error with context
+            raise RuntimeError(
+                f"Failed to connect to MCP server '{self.config.name}' "
+                f"via {self.config.transport}: {original_error}"
+            ) from original_error
 
     async def disconnect(self) -> None:
         """
