@@ -4,6 +4,7 @@ Opper Agent SDK - Build reliable AI agents with clean architecture.
 Main exports:
     - Agent: Main agent implementation
     - ReactAgent: ReAct pattern agent
+    - ChatAgent: Conversational agent
     - tool: Decorator to create tools from functions
     - hook: Decorator to create lifecycle hooks
     - AgentContext: Execution context manager
@@ -23,16 +24,19 @@ from .memory.memory import Memory
 from .mcp.provider import mcp
 from .mcp.config import MCPServerConfig
 
-# from .agents.react import ReactAgent  # Phase 5
+# Advanced agents (Phase 5)
+from .agents.react import ReactAgent
+from .agents.chat import ChatAgent
 
 __all__ = [
     "__version__",
     "Agent",
+    "ReactAgent",
+    "ChatAgent",
     "tool",
     "hook",
     "AgentContext",
     "Memory",
     "mcp",
     "MCPServerConfig",
-    # "ReactAgent",
 ]

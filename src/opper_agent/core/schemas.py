@@ -40,3 +40,43 @@ class Thought(BaseModel):
         default_factory=dict,
         description="Memory writes the model wants to perform (key -> payload with value, description, metadata)",
     )
+
+
+# ReAct Agent Schemas
+
+
+class Action(BaseModel):
+    """
+    Represents an action in the ReAct pattern.
+
+    An action specifies a tool to call with its parameters.
+    """
+
+    tool_name: str = Field(description="Name of the tool to execute")
+    parameters: Dict[str, Any] = Field(
+        default_factory=dict, description="Parameters for the tool"
+    )
+
+
+class ReactThought(BaseModel):
+    """
+    ReAct pattern reasoning step.
+
+    The agent reasons about the current situation and decides on an action.
+    If is_complete is True, the agent has finished and no action is needed.
+    """
+
+    reasoning: str = Field(
+        description="Detailed reasoning about the current situation and next steps"
+    )
+    is_complete: bool = Field(
+        default=False,
+        description="True if the task is complete and no further actions needed",
+    )
+    action: Optional[Action] = Field(
+        default=None,
+        description="The action to take (None if is_complete=True)",
+    )
+    user_message: str = Field(
+        default="Thinking...", description="Status message for the user"
+    )
