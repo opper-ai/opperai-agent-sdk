@@ -39,7 +39,7 @@ class ResearchFindings(BaseModel):
 composio_config = MCPServerConfig(
     name="composio-search",
     transport="streamable-http",
-    url="deep-research-url",  # NOTE you need a composio search link
+    url="https://backend.composio.dev/v3/mcp/YOUR-ID/mcp?include_composio_helper_actions=true",  # NOTE you need a composio search link
 )
 
 
