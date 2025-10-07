@@ -34,8 +34,8 @@ class MCPServerConfig(BaseModel):
     """
 
     name: str = Field(description="Unique identifier for this MCP server")
-    transport: Literal["stdio", "http-sse"] = Field(
-        description="Transport protocol to use"
+    transport: Literal["stdio", "http-sse", "streamable-http"] = Field(
+        description="Transport protocol to use: stdio (local), http-sse (deprecated SSE), or streamable-http (new 2025 protocol)"
     )
 
     # HTTP-SSE specific
@@ -45,6 +45,10 @@ class MCPServerConfig(BaseModel):
     headers: Dict[str, str] = Field(
         default_factory=dict,
         description="Optional HTTP headers for HTTP-SSE transport",
+    )
+    method: Literal["GET", "POST"] = Field(
+        default="GET",
+        description="HTTP method for SSE connection (GET or POST). Some servers like Composio require POST.",
     )
 
     # stdio specific
@@ -66,9 +70,20 @@ class MCPServerConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_transport_requirements(self):
-        """Validate transport-specific requirements."""
+        """
+        Validate transport-specific requirements.
+
+        Ensures that required fields are present based on the selected transport type.
+        For stdio, a command is required. For http-sse and streamable-http, a URL is required.
+
+        Returns:
+            Validated config instance.
+
+        Raises:
+            ValueError: If transport-specific requirements are not met.
+        """
         if self.transport == "stdio" and not self.command:
             raise ValueError("command is required for stdio transport")
-        if self.transport == "http-sse" and not self.url:
-            raise ValueError("url is required for http-sse transport")
+        if self.transport in ("http-sse", "streamable-http") and not self.url:
+            raise ValueError(f"url is required for {self.transport} transport")
         return self

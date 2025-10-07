@@ -5,8 +5,11 @@ Wraps MCP servers as ToolProviders that can be used seamlessly
 with agents alongside regular tools.
 """
 
-from typing import Any, Dict, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 import logging
+
+if TYPE_CHECKING:
+    from ..base.agent import BaseAgent
 
 from ..base.tool import FunctionTool, Tool
 from .client import MCPClient, MCPTool
@@ -19,8 +22,20 @@ class MCPToolProvider:
     """
     ToolProvider wrapper around one or more MCP servers.
 
-    Implements the ToolProvider protocol, allowing MCP servers to be
-    used as tools in agent configurations.
+    This class implements the ToolProvider protocol, allowing MCP servers to be
+    used seamlessly as tools in agent configurations. It manages the lifecycle of
+    connections to multiple MCP servers and exposes their tools to agents.
+
+    The provider handles:
+    - Automatic connection/disconnection to MCP servers
+    - Tool discovery and wrapping as FunctionTool objects
+    - Error handling and graceful degradation if servers fail
+    - Tool name prefixing to avoid conflicts between servers
+
+    Attributes:
+        configs: List of MCP server configurations to connect to.
+        name_prefix: Optional prefix for all tool names (defaults to server name).
+        clients: Dictionary mapping server names to their MCPClient instances.
 
     Examples:
         # Single MCP server
@@ -128,12 +143,16 @@ class MCPToolProvider:
         """
         Wrap an MCP tool as a FunctionTool.
 
+        Creates a FunctionTool that delegates to the MCP server when called.
+        The tool name is prefixed with the server name (or custom prefix) to avoid
+        conflicts when using multiple MCP servers.
+
         Args:
-            server_name: Name of the MCP server
-            mcp_tool: MCP tool to wrap
+            server_name: Name of the MCP server providing this tool.
+            mcp_tool: MCP tool metadata to wrap.
 
         Returns:
-            FunctionTool that calls the MCP tool
+            FunctionTool that calls the MCP tool when executed.
         """
         # Build tool name with prefix
         prefix = self.name_prefix or server_name
