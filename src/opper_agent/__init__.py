@@ -9,6 +9,7 @@ Main exports:
     - hook: Decorator to create lifecycle hooks
     - AgentContext: Execution context manager
     - Memory: Agent memory system
+    - AgentLogger, RichLogger, SimpleLogger: Logging system
 """
 
 # Version
@@ -19,6 +20,9 @@ from .core.agent import Agent
 from .utils.decorators import tool, hook
 from .base.context import AgentContext
 from .memory.memory import Memory
+
+# Logging system
+from .utils.logging import AgentLogger, RichLogger, SimpleLogger
 
 # MCP integration (Phase 4)
 from .mcp.provider import mcp
@@ -37,6 +41,9 @@ __all__ = [
     "hook",
     "AgentContext",
     "Memory",
+    "AgentLogger",
+    "RichLogger",
+    "SimpleLogger",
     "mcp",
     "MCPServerConfig",
 ]

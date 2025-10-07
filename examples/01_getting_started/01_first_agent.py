@@ -7,6 +7,7 @@ Run this with: uv run python examples/quick_test.py
 import asyncio
 import os
 from opper_agent import Agent, tool
+from opper_agent.utils.logging import RichLogger
 
 
 @tool
@@ -46,6 +47,7 @@ async def main():
         tools=[add, multiply],
         max_iterations=5,
         verbose=True,  # Show detailed execution
+        # logger=RichLogger(),
     )
 
     # Run a simple task
@@ -55,7 +57,7 @@ async def main():
     try:
         result = await agent.process(task)
         print("\n" + "=" * 60)
-        print(f"✅ Final Result: {result}")
+        print(f"Final Result: {result}")
         print("=" * 60)
 
         # Show execution stats

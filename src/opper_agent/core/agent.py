@@ -39,8 +39,10 @@ class Agent(BaseAgent):
             except Exception as exc:  # pragma: no cover - defensive guard
                 # Disable memory if initialization fails to keep agent operational
                 self.enable_memory = False
-                if self.verbose:
-                    print(f"Memory disabled due to initialization error: {exc}")
+                if self.logger:
+                    self.logger.log_warning(
+                        f"Memory disabled due to initialization error: {exc}"
+                    )
 
     async def process(self, input: Any, _parent_span_id: Optional[str] = None) -> Any:
         """
@@ -132,9 +134,9 @@ class Agent(BaseAgent):
                 HookEvents.LOOP_START, self.context, agent=self
             )
 
-            if self.verbose:
-                print(
-                    f"\n--- Iteration {self.context.iteration + 1}/{self.max_iterations} ---"
+            if self.logger:
+                self.logger.log_iteration(
+                    self.context.iteration + 1, self.max_iterations
                 )
 
             thought: Optional[Thought] = None
@@ -142,15 +144,16 @@ class Agent(BaseAgent):
             loop_complete = False
 
             try:
-                thought = await self._think(goal)
+                # Show spinner while thinking
+                if self.logger:
+                    with self.logger.log_thinking():
+                        thought = await self._think(goal)
+                else:
+                    thought = await self._think(goal)
 
-                if self.verbose and thought is not None:
-                    print(f"Reasoning: {thought.reasoning}")
-                    print(f"Tool calls: {len(thought.tool_calls)}")
-                    if self.enable_memory and thought.memory_reads:
-                        print(
-                            f"Memory reads: {len(thought.memory_reads)} {thought.memory_reads}"
-                        )
+                # Log the thought
+                if self.logger and thought is not None:
+                    self.logger.log_thought(thought.reasoning, len(thought.tool_calls))
 
                 memory_reads_performed = False
                 memory_writes_performed = False
@@ -161,8 +164,8 @@ class Agent(BaseAgent):
                     and thought is not None
                     and thought.memory_reads
                 ):
-                    if self.verbose:
-                        print(f"Loading memory keys: {thought.memory_reads}")
+                    if self.logger:
+                        self.logger.log_memory_read(thought.memory_reads)
 
                     memory_read_span = await self.opper.spans.create_async(
                         name="memory_read",
@@ -179,8 +182,8 @@ class Agent(BaseAgent):
 
                     self.context.metadata["current_memory"] = memory_data
                     memory_reads_performed = True
-                    if self.verbose:
-                        print(f"Loaded memory: {memory_data}")
+                    if self.logger:
+                        self.logger.log_memory_loaded(memory_data)
 
                 if (
                     self.enable_memory
@@ -188,9 +191,9 @@ class Agent(BaseAgent):
                     and thought is not None
                     and thought.memory_updates
                 ):
-                    if self.verbose:
-                        print(
-                            f"Writing to memory: {list(thought.memory_updates.keys())}"
+                    if self.logger:
+                        self.logger.log_memory_write(
+                            list(thought.memory_updates.keys())
                         )
 
                     memory_write_span = await self.opper.spans.create_async(
@@ -240,19 +243,14 @@ class Agent(BaseAgent):
                     )
                     loop_complete = not has_tool_calls and not has_memory_reads
 
-                    if self.verbose and has_memory_reads and not has_tool_calls:
-                        print("Continuing to next iteration with loaded memory...")
-
             finally:
                 await self.hook_manager.trigger(
                     HookEvents.LOOP_END, self.context, agent=self
                 )
 
             if loop_complete:
-                if self.verbose:
-                    print(
-                        "No more tool calls or memory reads - generating final result"
-                    )
+                if self.logger:
+                    self.logger.log_final_result()
                 break
 
         result = await self._generate_final_result(goal)
@@ -382,8 +380,8 @@ The memory you write persists across all process() calls on this agent.
     async def _execute_tool(self, tool_call: ToolCall) -> ToolResult:
         """Execute a single tool call and create a span for it."""
 
-        if self.verbose:
-            print(f"[TOOL CALL] - {tool_call.name} with {tool_call.parameters}")
+        if self.logger:
+            self.logger.log_tool_call(tool_call.name, tool_call.parameters)
 
         tool = self.get_tool(tool_call.name)
         if not tool:
@@ -428,9 +426,10 @@ The memory you write persists across all process() calls on this agent.
             HookEvents.TOOL_RESULT, self.context, agent=self, tool=tool, result=result
         )
 
-        if self.verbose:
-            status = "Status: " + "SUCCESS" if result.success else "FAILED"
-            print(f"---> [RESULT] {status} Result: {result.result}\n")
+        if self.logger:
+            self.logger.log_tool_result(
+                tool_call.name, result.success, result.result, result.error
+            )
 
         return result
 
@@ -442,9 +441,6 @@ The memory you write persists across all process() calls on this agent.
         MCP stdio clients have been disconnected (which can leave cancel scopes active).
         """
         import anyio
-
-        if self.verbose:
-            print("\n[GENERATING FINAL RESULT]\n")
 
         context = {
             "goal": str(goal),
@@ -509,5 +505,5 @@ Follow any instructions provided for formatting and style."""
                 self.context.update_usage(usage)
         except Exception as e:
             # Don't break execution if usage tracking fails
-            if self.verbose:
-                print(f"Warning: Could not track usage: {e}")
+            if self.logger:
+                self.logger.log_warning(f"Could not track usage: {e}")

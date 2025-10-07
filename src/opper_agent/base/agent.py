@@ -16,6 +16,7 @@ import concurrent.futures
 from .context import AgentContext, Usage
 from .tool import Tool, FunctionTool
 from .hooks import HookManager, HookEvents
+from ..utils.logging import AgentLogger, SimpleLogger
 
 
 class BaseAgent(ABC):
@@ -44,6 +45,7 @@ class BaseAgent(ABC):
         hooks: Optional[Union[List[Callable], HookManager]] = None,
         max_iterations: int = 25,
         verbose: bool = False,
+        logger: Optional[AgentLogger] = None,
         model: Optional[str] = None,
         opper_api_key: Optional[str] = None,
     ):
@@ -59,7 +61,8 @@ class BaseAgent(ABC):
             output_schema: Pydantic model for output validation
             hooks: Hook functions or HookManager
             max_iterations: Maximum execution iterations
-            verbose: Enable verbose logging
+            verbose: Enable verbose logging (legacy, use logger instead)
+            logger: Custom logger instance (defaults to SimpleLogger if verbose=True)
             model: Default model for LLM calls
             opper_api_key: Opper API key (or from env)
         """
@@ -70,6 +73,14 @@ class BaseAgent(ABC):
         self.max_iterations = max_iterations
         self.verbose = verbose
         self.model = model or "gcp/gemini-flash-latest"
+
+        # Logger setup
+        if logger is not None:
+            self.logger = logger
+        elif verbose:
+            self.logger = SimpleLogger()
+        else:
+            self.logger = None
 
         # Schemas
         self.input_schema = input_schema
