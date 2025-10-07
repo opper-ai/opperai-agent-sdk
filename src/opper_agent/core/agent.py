@@ -94,11 +94,19 @@ class Agent(BaseAgent):
                 HookEvents.AGENT_END, self.context, agent=self, result=result
             )
 
+            # Disconnect MCP servers before span updates
+            # This prevents issues with stdio pipes during final operations
+            await self._deactivate_tool_providers()
+
             if parent_span:
                 # Update parent span with final output
-                await self.opper.spans.update_async(
-                    span_id=parent_span.id, output=str(result)
-                )
+                # Shield from AnyIO cancel scopes that may have been left by MCP cleanup
+                import anyio
+
+                with anyio.CancelScope(shield=True):
+                    await self.opper.spans.update_async(
+                        span_id=parent_span.id, output=str(result)
+                    )
 
             return result
 
@@ -109,6 +117,8 @@ class Agent(BaseAgent):
             )
             raise
         finally:
+            # Ensure tool providers are deactivated even if an error occurred
+            # This is idempotent, safe to call multiple times
             await self._deactivate_tool_providers()
 
     async def _run_loop(self, goal: Any) -> Any:
@@ -244,10 +254,6 @@ class Agent(BaseAgent):
                         "No more tool calls or memory reads - generating final result"
                     )
                 break
-
-        # Disconnect MCP servers before generating final result
-        # This prevents issues with stdio pipes during final LLM call
-        await self._deactivate_tool_providers()
 
         result = await self._generate_final_result(goal)
         return result
@@ -429,7 +435,13 @@ The memory you write persists across all process() calls on this agent.
         return result
 
     async def _generate_final_result(self, goal: Any) -> Any:
-        """Generate final structured result."""
+        """
+        Generate final structured result.
+
+        This method is shielded from AnyIO cancel scopes to prevent issues when
+        MCP stdio clients have been disconnected (which can leave cancel scopes active).
+        """
+        import anyio
 
         if self.verbose:
             print("\n[GENERATING FINAL RESULT]\n")
@@ -455,22 +467,24 @@ The memory you write persists across all process() calls on this agent.
         instructions = """Generate the final result based on the execution history.
 Follow any instructions provided for formatting and style."""
 
-        response = await self.opper.call_async(
-            name="generate_final_result",
-            instructions=instructions,
-            input=context,
-            output_schema=self.output_schema,
-            model=self.model,
-            parent_span_id=self.context.parent_span_id,
-        )
+        # Shield this from AnyIO cancel scopes that may have been left by MCP stdio cleanup
+        with anyio.CancelScope(shield=True):
+            response = await self.opper.call_async(
+                name="generate_final_result",
+                instructions=instructions,
+                input=context,
+                output_schema=self.output_schema,
+                model=self.model,
+                parent_span_id=self.context.parent_span_id,
+            )
 
-        # Track usage
-        self._track_usage(response)
+            # Track usage
+            self._track_usage(response)
 
-        # Serialize the response
-        if self.output_schema:
-            return self.output_schema(**response.json_payload)
-        return response.message
+            # Serialize the response
+            if self.output_schema:
+                return self.output_schema(**response.json_payload)
+            return response.message
 
     def _track_usage(self, response: Any) -> None:
         """

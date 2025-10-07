@@ -355,3 +355,44 @@ async def test_mcp_tool_result_structure(mock_stdio_transport):
         assert result.execution_time >= 0
 
         await provider.teardown()
+
+
+@pytest.mark.asyncio
+async def test_mcp_disconnect_with_cancel_scope_shielding(mock_stdio_transport):
+    """
+    Test that MCP client disconnect is shielded from AnyIO cancel scopes.
+
+    This test verifies that the disconnect operation completes successfully
+    even when called within an AnyIO cancel scope, preventing CancelledError
+    from propagating to subsequent operations.
+    """
+    import anyio
+
+    session = IntegrationFakeSession()
+    config = MCPServerConfig(name="test", transport="stdio", command="python")
+
+    with (
+        patch("opper_agent.mcp.client.stdio_client", mock_stdio_transport),
+        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+    ):
+        client = MCPClient(config)
+        await client.connect()
+        assert client.connected
+
+        # Simulate a cancel scope that might occur during cleanup
+        with anyio.CancelScope() as scope:
+            scope.cancel()
+            # Disconnect should still work despite the cancelled scope
+            # The shield in disconnect() protects it
+            await client.disconnect()
+            assert not client.connected
+
+        # Verify we can continue operations after disconnect
+        # (simulates making HTTP calls to Opper after MCP cleanup)
+        test_value = None
+        with anyio.CancelScope(shield=True):
+            # This simulates the final result generation
+            await anyio.sleep(0)
+            test_value = "completed"
+
+        assert test_value == "completed"

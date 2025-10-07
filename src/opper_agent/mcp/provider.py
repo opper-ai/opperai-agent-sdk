@@ -127,7 +127,7 @@ class MCPToolProvider:
 
         This is called by the agent after execution completes.
         """
-        for server_name, client in self.clients.items():
+        for server_name, client in list(self.clients.items()):
             try:
                 await client.disconnect()
                 if logger.isEnabledFor(logging.DEBUG):

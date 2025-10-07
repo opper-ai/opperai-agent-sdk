@@ -224,7 +224,8 @@ class MCPClient:
         idempotent - calling it multiple times has no effect if already disconnected.
 
         A short delay is included before closing to prevent EPIPE errors if the server
-        is still writing data.
+        is still writing data. The entire cleanup is shielded from cancellation to
+        ensure proper resource cleanup.
         """
         if not self._connected:
             return
@@ -232,11 +233,19 @@ class MCPClient:
         assert self._exit_stack is not None
 
         try:
-            # Give the server a moment to finish any pending writes
-            # This prevents EPIPE errors when the server is still writing
-            await asyncio.sleep(0.2)
+            # Import anyio for shielding
+            import anyio
 
-            await self._exit_stack.aclose()
+            # Shield the entire cleanup from cancellation to ensure proper resource cleanup
+            # This prevents AnyIO cancel scope issues from affecting subsequent operations
+            with anyio.CancelScope(shield=True):
+                # Close the exit stack which will terminate the subprocess
+                await self._exit_stack.aclose()
+
+                # Give the subprocess a moment to fully terminate
+                # This prevents buffered stderr/stdout from the subprocess (like npm notices)
+                # from appearing in the terminal after disconnect
+                await asyncio.sleep(0.1)
         except Exception as e:
             logger.debug(f"Error during MCP disconnect for '{self.config.name}': {e}")
         finally:

@@ -449,3 +449,86 @@ async def test_agent_mcp_connection_failure(
         # Agent should have handled the connection failure
         # and continued without MCP tools
         assert result is not None
+
+
+@pytest.mark.asyncio
+async def test_agent_final_result_generation_with_mcp_cleanup(
+    mock_acompletion, mock_transports, vcr_cassette, opper_api_key, mock_opper_client
+):
+    """
+    Test that agent can generate final results after MCP cleanup.
+
+    This test verifies that the anyio cancel scope shielding in
+    _generate_final_result() prevents CancelledError when making
+    HTTP calls to Opper after MCP stdio clients have disconnected.
+
+    Regression test for: asyncio.exceptions.CancelledError during
+    final result generation after MCP stdio disconnect.
+    """
+    mcp_tools = [
+        SimpleNamespace(
+            name="test_tool",
+            description="Test tool",
+            inputSchema={},
+            outputSchema=None,
+        ),
+    ]
+
+    session = AgentMCPFakeSession(tools=mcp_tools)
+    session.call_tool_mock = AsyncMock(return_value="Tool executed")
+
+    config = MCPServerConfig(name="test", transport="stdio", command="python")
+
+    call_count = [0]
+
+    def mock_completion_side_effect(*args, **kwargs):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            # First call: use the MCP tool
+            return make_response(
+                {
+                    "reasoning": "Using MCP tool",
+                    "tool_calls": [
+                        {
+                            "name": "test:test_tool",
+                            "parameters": {},
+                            "reasoning": "Execute tool",
+                        }
+                    ],
+                    "user_message": "Working...",
+                }
+            )
+        elif call_count[0] == 2:
+            # Second call: finish execution
+            return make_response(
+                {
+                    "reasoning": "Done",
+                    "tool_calls": [],
+                    "user_message": "Complete",
+                }
+            )
+        else:
+            # Third call: generate final result (this is the critical one)
+            # This happens AFTER MCP disconnect and should not raise CancelledError
+            return make_response("Final result generated successfully")
+
+    mock_opper_client.call_async.side_effect = mock_completion_side_effect
+
+    with (
+        patch("opper_agent.mcp.client.stdio_client", mock_transports["stdio"]),
+        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+    ):
+        agent = Agent(
+            name="TestAgent",
+            tools=[mcp(config)],
+            opper_api_key=opper_api_key,
+            max_iterations=3,
+        )
+
+        # This should complete without CancelledError
+        result = await agent.process("Test task")
+
+        # Verify the final result was generated
+        assert result is not None
+        # Verify all three LLM calls were made (think, think, generate_final_result)
+        assert call_count[0] == 3
