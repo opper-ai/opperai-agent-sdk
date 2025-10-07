@@ -115,7 +115,6 @@ async def filesystem_example():
     print(result)
 
 
-
 async def custom_prefix_example():
     """Example: Custom tool name prefixes."""
 
@@ -142,9 +141,8 @@ async def custom_prefix_example():
 
 if __name__ == "__main__":
     # Run the basic example (uses @modelcontextprotocol/server-everything)
-    # asyncio.run(main())
+    asyncio.run(main())
 
     # Uncomment to try other examples:
-    asyncio.run(filesystem_example())
-    # asyncio.run(multi_server_example())
+    # asyncio.run(filesystem_example())
     # asyncio.run(custom_prefix_example())
