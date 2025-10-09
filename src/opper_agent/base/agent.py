@@ -199,6 +199,9 @@ class BaseAgent(ABC):
         """
         Convert this agent into a tool for use by other agents.
 
+        If the agent has an input_schema, the schema's fields will be exposed
+        as tool parameters for better LLM understanding.
+
         Args:
             tool_name: Custom tool name (default: agent name)
             description: Custom description (default: agent description)
@@ -209,15 +212,37 @@ class BaseAgent(ABC):
         tool_name = tool_name or f"{self.name}_agent"
         description = description or f"Delegate to {self.name}: {self.description}"
 
+        # Extract parameters from input_schema if available
+        parameters = {"task": "str - Task to delegate to agent"}
+        if self.input_schema:
+            try:
+                # Get the full schema from the Pydantic model
+                schema = self.input_schema.model_json_schema()
+                if "properties" in schema:
+                    # Use the schema properties directly for better structure
+                    parameters = schema["properties"]
+            except Exception:
+                # Fall back to simple task parameter if schema extraction fails
+                pass
+
         def agent_tool(
-            task: str, _parent_span_id: Optional[str] = None, **kwargs
+            task: str = None, _parent_span_id: Optional[str] = None, **kwargs
         ) -> Any:
             """Tool function that delegates to agent."""
 
             async def call_agent():
-                input_data = {"task": task, **kwargs}
-                if self.instructions:
-                    input_data["instructions"] = self.instructions
+                # If input_schema exists and we have kwargs, use them directly
+                if self.input_schema and kwargs:
+                    input_data = kwargs
+                    # Add task if provided and not already in kwargs
+                    if task and "task" not in kwargs:
+                        input_data["task"] = task
+                else:
+                    # Fall back to simple task-based input
+                    input_data = {"task": task or "", **kwargs}
+                    if self.instructions:
+                        input_data["instructions"] = self.instructions
+
                 return await self.process(input_data, _parent_span_id=_parent_span_id)
 
             # Handle event loop
@@ -243,7 +268,7 @@ class BaseAgent(ABC):
             func=agent_tool,
             name=tool_name,
             description=description,
-            parameters={"task": "str - Task to delegate to agent"},
+            parameters=parameters,
         )
 
     def __repr__(self) -> str:

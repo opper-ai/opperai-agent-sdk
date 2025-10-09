@@ -5,6 +5,8 @@ Tests for @tool and @hook decorators.
 """
 
 import pytest
+from typing import List
+from pydantic import BaseModel, Field
 from opper_agent.utils.decorators import tool, hook
 from opper_agent.base.tool import FunctionTool
 
@@ -147,3 +149,115 @@ def test_tool_without_docstring():
     # Should have a default description
     assert no_doc.description is not None
     assert len(no_doc.description) > 0
+
+
+def test_tool_with_pydantic_parameter():
+    """Test @tool extracts Pydantic model schema for parameters."""
+
+    class ReportInput(BaseModel):
+        title: str = Field(description="The title of the report")
+        summary: str = Field(description="The summary of the report")
+        key_findings: List[str] = Field(description="The key findings")
+        detailed_analysis: str = Field(description="The detailed analysis")
+
+    @tool
+    def save_report(report: ReportInput) -> str:
+        """Save a report to file."""
+        return f"Report {report.title} saved"
+
+    # Check that the tool was created
+    assert isinstance(save_report, FunctionTool)
+    assert save_report.name == "save_report"
+
+    # Check that parameters contain the full schema
+    assert "report" in save_report.parameters
+    report_param = save_report.parameters["report"]
+
+    # Should be a dict (schema) not a string
+    assert isinstance(report_param, dict)
+    assert report_param["type"] == "object"
+    assert "properties" in report_param
+    assert "title" in report_param["properties"]
+    assert "summary" in report_param["properties"]
+    assert "key_findings" in report_param["properties"]
+    assert "detailed_analysis" in report_param["properties"]
+
+
+def test_tool_with_mixed_parameters():
+    """Test @tool with both Pydantic and simple type parameters."""
+
+    class UserInput(BaseModel):
+        name: str
+        age: int
+
+    @tool
+    def process_user(user: UserInput, debug: bool = False) -> str:
+        """Process user data."""
+        return f"Processed {user.name}"
+
+    assert isinstance(process_user, FunctionTool)
+
+    # Check Pydantic parameter
+    assert "user" in process_user.parameters
+    user_param = process_user.parameters["user"]
+    assert isinstance(user_param, dict)
+    assert user_param["type"] == "object"
+
+    # Check simple parameter
+    assert "debug" in process_user.parameters
+    assert isinstance(process_user.parameters["debug"], str)
+    assert "bool" in process_user.parameters["debug"]
+
+
+@pytest.mark.asyncio
+async def test_tool_with_pydantic_execution():
+    """Test that tool with Pydantic parameter can be executed."""
+
+    class MathInput(BaseModel):
+        a: int
+        b: int
+        operation: str
+
+    @tool
+    def calculate(input: MathInput) -> int:
+        """Perform calculation."""
+        if input.operation == "add":
+            return input.a + input.b
+        elif input.operation == "multiply":
+            return input.a * input.b
+        return 0
+
+    # Execute with Pydantic instance
+    math_input = MathInput(a=5, b=3, operation="add")
+    result = await calculate.execute(input=math_input)
+
+    assert result.success
+    assert result.result == 8
+
+
+@pytest.mark.asyncio
+async def test_tool_with_pydantic_dict_conversion():
+    """Test that tool automatically converts dict to Pydantic model."""
+
+    class ReportInput(BaseModel):
+        title: str
+        summary: str
+        key_findings: List[str]
+
+    @tool
+    def save_report(report: ReportInput) -> str:
+        """Save report to file."""
+        return f"Saved: {report.title} with {len(report.key_findings)} findings"
+
+    # Execute with dict (as LLM would provide)
+    report_dict = {
+        "title": "Test Report",
+        "summary": "This is a test",
+        "key_findings": ["Finding 1", "Finding 2", "Finding 3"],
+    }
+
+    result = await save_report.execute(report=report_dict)
+
+    assert result.success
+    assert "Saved: Test Report" in result.result
+    assert "3 findings" in result.result

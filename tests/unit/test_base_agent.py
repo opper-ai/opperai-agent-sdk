@@ -354,3 +354,127 @@ def test_agent_as_tool_outside_event_loop(mock_opper_client, monkeypatch):
     # Call directly (no running event loop)
     result = tool.func("direct task")
     assert "direct task" in str(result)
+
+
+def test_agent_as_tool_with_input_schema(mock_opper_client, monkeypatch):
+    """Test that agent.as_tool() exposes input_schema fields as parameters."""
+    from pydantic import BaseModel, Field
+    from typing import List
+
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    class ResearchRequest(BaseModel):
+        topic: str = Field(description="The topic to research")
+        depth: int = Field(description="Depth of research (1-5)")
+        sources: List[str] = Field(description="Preferred sources")
+
+    agent = TestAgent(
+        name="ResearchAgent",
+        input_schema=ResearchRequest,
+    )
+
+    tool = agent.as_tool()
+
+    # Check that parameters contain the schema fields
+    assert isinstance(tool.parameters, dict)
+    assert "topic" in tool.parameters
+    assert "depth" in tool.parameters
+    assert "sources" in tool.parameters
+
+    # Should not have the generic "task" parameter anymore
+    # (or if it does, should also have the schema fields)
+    assert len(tool.parameters) >= 3
+
+
+def test_agent_as_tool_without_input_schema(mock_opper_client, monkeypatch):
+    """Test that agent.as_tool() without input_schema has default task parameter."""
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    agent = TestAgent(name="SimpleAgent")
+    tool = agent.as_tool()
+
+    # Should have simple task parameter
+    assert "task" in tool.parameters
+    assert isinstance(tool.parameters["task"], str)
+    assert (
+        "delegate" in tool.parameters["task"].lower()
+        or "str" in tool.parameters["task"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_agent_as_tool_with_schema_execution(mock_opper_client, monkeypatch):
+    """Test that agent-as-tool with input_schema can be executed with structured data."""
+    from pydantic import BaseModel
+
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    class UserData(BaseModel):
+        name: str
+        age: int
+
+    class DataAgent(BaseAgent):
+        """Agent that processes structured data."""
+
+        async def process(self, input: Any, _parent_span_id: str = None) -> Any:
+            if isinstance(input, dict):
+                return f"Processed {input.get('name', 'unknown')}, age {input.get('age', 0)}"
+            return f"Processed: {input}"
+
+        async def _run_loop(self, goal: Any) -> Any:
+            return goal
+
+    agent = DataAgent(
+        name="DataAgent",
+        input_schema=UserData,
+    )
+
+    tool = agent.as_tool()
+
+    # Execute with structured parameters
+    result = tool.func(name="Alice", age=30)
+    assert "Alice" in str(result)
+    assert "30" in str(result)
+
+
+@pytest.mark.asyncio
+async def test_agent_as_tool_receives_kwargs_as_dict(mock_opper_client, monkeypatch):
+    """Test that agent-as-tool receives kwargs properly when called via execute()."""
+    from pydantic import BaseModel
+
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    class PersonInfo(BaseModel):
+        name: str
+        age: int
+        city: str
+
+    class PersonAgent(BaseAgent):
+        """Agent that processes person info."""
+
+        async def process(self, input: Any, _parent_span_id: str = None) -> Any:
+            # Should receive input as dict with all kwargs
+            if isinstance(input, dict):
+                name = input.get("name", "unknown")
+                age = input.get("age", 0)
+                city = input.get("city", "unknown")
+                return f"{name}, {age} years old, from {city}"
+            return "Invalid input"
+
+        async def _run_loop(self, goal: Any) -> Any:
+            return goal
+
+    agent = PersonAgent(
+        name="PersonAgent",
+        input_schema=PersonInfo,
+    )
+
+    tool = agent.as_tool()
+
+    # Execute via FunctionTool.execute() (as parent agent would)
+    result = await tool.execute(name="Bob", age=25, city="NYC")
+
+    assert result.success
+    assert "Bob" in result.result
+    assert "25" in result.result
+    assert "NYC" in result.result

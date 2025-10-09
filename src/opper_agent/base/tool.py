@@ -79,7 +79,12 @@ class FunctionTool(Tool):
         )
 
     def _extract_parameters(self, func: Callable) -> Dict[str, Any]:
-        """Extract parameter information from function signature."""
+        """
+        Extract parameter information from function signature.
+
+        If a parameter is a Pydantic model, extracts its full schema.
+        Otherwise, extracts type hints as string descriptions.
+        """
         sig = inspect.signature(func)
         parameters = {}
 
@@ -88,7 +93,30 @@ class FunctionTool(Tool):
             if param_name.startswith("_"):
                 continue
 
-            # Get type annotation
+            # Check if annotation is a Pydantic model
+            if param.annotation != inspect.Parameter.empty:
+                # Try to detect Pydantic BaseModel
+                try:
+                    # Check if it's a Pydantic model by looking for model_json_schema
+                    if hasattr(param.annotation, "model_json_schema"):
+                        # Extract full Pydantic schema
+                        schema = param.annotation.model_json_schema()
+                        # Use the properties from the schema for better LLM understanding
+                        if "properties" in schema:
+                            parameters[param_name] = {
+                                "type": "object",
+                                "properties": schema["properties"],
+                                "required": schema.get("required", []),
+                                "description": schema.get(
+                                    "description", f"Structured input for {param_name}"
+                                ),
+                            }
+                            continue
+                except Exception:
+                    # If schema extraction fails, fall through to simple type extraction
+                    pass
+
+            # Get simple type annotation for non-Pydantic types
             param_type = "any"
             if param.annotation != inspect.Parameter.empty:
                 if hasattr(param.annotation, "__name__"):
@@ -116,8 +144,27 @@ class FunctionTool(Tool):
             # Filter out special parameters for function call
             filtered_kwargs = {k: v for k, v in kwargs.items() if not k.startswith("_")}
 
-            # Pass parent_span_id if function accepts it
+            # Convert dict parameters to Pydantic models if needed
             sig = inspect.signature(self.func)
+            for param_name, param in sig.parameters.items():
+                if (
+                    param_name in filtered_kwargs
+                    and param.annotation != inspect.Parameter.empty
+                ):
+                    # Check if parameter expects a Pydantic model
+                    if hasattr(param.annotation, "model_validate"):
+                        value = filtered_kwargs[param_name]
+                        # If value is a dict, convert to Pydantic model
+                        if isinstance(value, dict):
+                            try:
+                                filtered_kwargs[param_name] = (
+                                    param.annotation.model_validate(value)
+                                )
+                            except Exception:
+                                # If conversion fails, let the function handle it
+                                pass
+
+            # Pass parent_span_id if function accepts it
             if "_parent_span_id" in sig.parameters:
                 filtered_kwargs["_parent_span_id"] = parent_span_id
 
