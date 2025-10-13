@@ -63,8 +63,8 @@ jobs:
           # Check required files exist
           REQUIRED_FILES=(
             "pyproject.toml"
-            "src/opper_agent/__init__.py"
-            "src/opper_agent/base/__init__.py"
+            "src/opper_agents/__init__.py"
+            "src/opper_agents/base/__init__.py"
             "README.md"
           )
 
