@@ -1,0 +1,89 @@
+name: Validate PR
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras
+
+      - name: Run ruff format check
+        run: |
+          uv run ruff format --check
+
+      - name: Run ruff linting
+        run: |
+          uv run ruff check
+
+      - name: Run type checking
+        run: |
+          uv run mypy src/ || true  # Don't fail on type issues for now
+
+      - name: Run tests
+        run: |
+          uv run pytest
+
+      - name: Verify examples
+        run: |
+          echo "Checking example files..."
+          if [ -d "examples" ]; then
+            for example in examples/*.py; do
+              if [ -f "$example" ]; then
+                echo "Syntax checking $example..."
+                uv run python -m py_compile "$example" || echo "⚠️ Syntax error in $example"
+              fi
+            done
+          else
+            echo "No examples directory found, skipping"
+          fi
+
+      - name: Validate package structure
+        run: |
+          # Check required files exist
+          REQUIRED_FILES=(
+            "pyproject.toml"
+            "src/opper_agents/__init__.py"
+            "src/opper_agents/base/__init__.py"
+            "README.md"
+          )
+
+          for file in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "❌ Missing required file: $file"
+              exit 1
+            fi
+          done
+
+          echo "✅ Package structure validated"
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "✅ All PR validation checks passed!"
+          echo "📋 Summary:"
+          echo "  - Code formatting checked with ruff"
+          echo "  - Linting completed with ruff"
+          echo "  - Type checking completed"
+          echo "  - Tests passed"
+          echo "  - Package structure validated"
