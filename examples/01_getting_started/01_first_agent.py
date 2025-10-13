@@ -47,7 +47,7 @@ async def main() -> None:
         tools=[add, multiply],
         max_iterations=5,
         verbose=True,  # Show detailed execution
-        logger=RichLogger(), # Default logger is SimpleLogger (normal print statements)
+        logger=RichLogger(),  # Default logger is SimpleLogger (normal print statements)
     )
 
     # Run a simple task

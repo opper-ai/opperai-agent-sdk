@@ -122,7 +122,7 @@ async def main() -> None:
 
     result = await agent.process(
         ResearchRequest(
-            topic="What is Opper AI?",  
+            topic="What is Opper AI?",
             depth="comprehensive",
             focus_areas=["traction", "team", "product", "innovation"],
             sources_required=3,
