@@ -33,53 +33,53 @@ class FileLogger(AgentLogger):
         with open(self.filename, "w") as f:
             f.write(f"=== Agent Log Started at {datetime.now()} ===\n\n")
 
-    def _write(self, message: str):
+    def _write(self, message: str) -> None:
         """Write a message to the log file."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with open(self.filename, "a") as f:
             f.write(f"[{timestamp}] {message}\n")
 
-    def log_iteration(self, iteration: int, max_iterations: int):
+    def log_iteration(self, iteration: int, max_iterations: int) -> None:
         self._write(f">>> Iteration {iteration}/{max_iterations}")
 
     @contextmanager
-    def log_thinking(self):
+    def log_thinking(self) -> Any:
         self._write("Thinking...")
         yield
         self._write("Thought complete.")
 
-    def log_thought(self, reasoning: str, tool_count: int):
+    def log_thought(self, reasoning: str, tool_count: int) -> None:
         self._write(f"Reasoning: {reasoning}")
         self._write(f"Planned tool calls: {tool_count}")
 
-    def log_tool_call(self, tool_name: str, parameters: Dict[str, Any]):
+    def log_tool_call(self, tool_name: str, parameters: Dict[str, Any]) -> None:
         params_str = ", ".join(f"{k}={v}" for k, v in parameters.items())
         self._write(f"Calling tool: {tool_name}({params_str})")
 
     def log_tool_result(
         self, tool_name: str, success: bool, result: Any, error: Optional[str] = None
-    ):
+    ) -> None:
         if success:
             self._write(f"Tool result: SUCCESS - {result}")
         else:
             self._write(f"Tool result: FAILED - {error}")
 
-    def log_memory_read(self, keys: List[str]):
+    def log_memory_read(self, keys: List[str]) -> None:
         self._write(f"Reading memory keys: {keys}")
 
-    def log_memory_loaded(self, data: Dict[str, Any]):
+    def log_memory_loaded(self, data: Dict[str, Any]) -> None:
         self._write(f"Loaded memory: {data}")
 
-    def log_memory_write(self, keys: List[str]):
+    def log_memory_write(self, keys: List[str]) -> None:
         self._write(f"Writing to memory: {keys}")
 
-    def log_final_result(self):
+    def log_final_result(self) -> None:
         self._write("Generating final result...")
 
-    def log_warning(self, message: str):
+    def log_warning(self, message: str) -> None:
         self._write(f"WARNING: {message}")
 
-    def log_error(self, message: str):
+    def log_error(self, message: str) -> None:
         self._write(f"ERROR: {message}")
 
 
@@ -94,7 +94,7 @@ class MetricsLogger(AgentLogger):
     - Send data to analytics services
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.metrics = {
             "iterations": 0,
             "tool_calls": 0,
@@ -104,43 +104,43 @@ class MetricsLogger(AgentLogger):
             "memory_writes": 0,
         }
 
-    def log_iteration(self, iteration: int, max_iterations: int):
+    def log_iteration(self, iteration: int, max_iterations: int) -> None:
         self.metrics["iterations"] = iteration
 
     @contextmanager
-    def log_thinking(self):
+    def log_thinking(self) -> Any:
         yield
 
-    def log_thought(self, reasoning: str, tool_count: int):
+    def log_thought(self, reasoning: str, tool_count: int) -> None:
         pass  # Could track reasoning length, sentiment, etc.
 
-    def log_tool_call(self, tool_name: str, parameters: Dict[str, Any]):
+    def log_tool_call(self, tool_name: str, parameters: Dict[str, Any]) -> None:
         self.metrics["tool_calls"] += 1
 
     def log_tool_result(
         self, tool_name: str, success: bool, result: Any, error: Optional[str] = None
-    ):
+    ) -> None:
         if success:
             self.metrics["successful_tools"] += 1
         else:
             self.metrics["failed_tools"] += 1
 
-    def log_memory_read(self, keys: List[str]):
+    def log_memory_read(self, keys: List[str]) -> None:
         self.metrics["memory_reads"] += len(keys)
 
-    def log_memory_loaded(self, data: Dict[str, Any]):
+    def log_memory_loaded(self, data: Dict[str, Any]) -> None:
         pass
 
-    def log_memory_write(self, keys: List[str]):
+    def log_memory_write(self, keys: List[str]) -> None:
         self.metrics["memory_writes"] += len(keys)
 
-    def log_final_result(self):
+    def log_final_result(self) -> None:
         pass
 
-    def log_warning(self, message: str):
+    def log_warning(self, message: str) -> None:
         pass
 
-    def log_error(self, message: str):
+    def log_error(self, message: str) -> None:
         pass
 
     def get_metrics(self) -> Dict[str, int]:
@@ -160,7 +160,7 @@ def multiply(a: float, b: float) -> float:
     return a * b
 
 
-async def main():
+async def main() -> None:
     print("=" * 80)
     print("EXAMPLE 1: FILE LOGGER")
     print("=" * 80)

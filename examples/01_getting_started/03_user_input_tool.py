@@ -37,7 +37,7 @@ def get_user_input(question: str) -> str:
     return user_response
 
 
-async def main():
+async def main() -> None:
     """Run a simple interactive agent."""
 
     # Create an agent that will have a conversation with the user

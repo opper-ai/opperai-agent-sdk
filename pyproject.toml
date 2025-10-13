@@ -42,7 +42,10 @@ dev = [
 test = "run_tests:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/opper_agent"]
+packages = ["src/opper_agents"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/opper_agents/py.typed" = "opper_agents/py.typed"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

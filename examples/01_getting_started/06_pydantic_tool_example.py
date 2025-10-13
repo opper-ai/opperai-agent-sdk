@@ -100,7 +100,7 @@ def analyze_topic(topic: str) -> dict:
     )
 
 
-async def main():
+async def main() -> None:
     """Demonstrate Pydantic model tool parameters."""
 
     if not os.getenv("OPPER_API_KEY"):

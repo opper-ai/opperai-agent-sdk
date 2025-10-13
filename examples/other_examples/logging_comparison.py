@@ -45,7 +45,7 @@ def format_currency(amount: float, currency: str = "USD") -> str:
     return f"{currency} {amount:,.2f}"
 
 
-async def main():
+async def main() -> None:
     print("=" * 80)
     print("1. SIMPLELOGGER (DEFAULT WITH VERBOSE=TRUE)")
     print("=" * 80)

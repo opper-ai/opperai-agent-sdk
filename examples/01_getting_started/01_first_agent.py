@@ -7,6 +7,7 @@ Run this with: uv run python examples/quick_test.py
 import asyncio
 import os
 from opper_agents import Agent, tool
+from opper_agents.utils.logging import RichLogger
 
 
 @tool
@@ -23,7 +24,7 @@ def multiply(x: int, y: int) -> int:
     return x * y
 
 
-async def main():
+async def main() -> None:
     """Run a quick test of the agent."""
 
     # Check for API key
@@ -46,7 +47,7 @@ async def main():
         tools=[add, multiply],
         max_iterations=5,
         verbose=True,  # Show detailed execution
-        # logger=RichLogger(),
+        logger=RichLogger(), # Default logger is SimpleLogger (normal print statements)
     )
 
     # Run a simple task

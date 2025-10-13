@@ -6,7 +6,18 @@ including function wrapping and execution handling.
 """
 
 from pydantic import BaseModel, Field
-from typing import Dict, Any, Callable, Optional, List, Union, Sequence, Protocol, Tuple, TYPE_CHECKING
+from typing import (
+    Dict,
+    Any,
+    Callable,
+    Optional,
+    List,
+    Union,
+    Sequence,
+    Protocol,
+    Tuple,
+    TYPE_CHECKING,
+)
 from abc import ABC, abstractmethod
 import inspect
 import asyncio
@@ -46,7 +57,7 @@ class Tool(BaseModel, ABC):
         arbitrary_types_allowed = True
 
     @abstractmethod
-    async def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs: Any) -> ToolResult:
         """Execute the tool with given parameters."""
         pass
 
@@ -57,7 +68,9 @@ class FunctionTool(Tool):
     Handles both sync and async functions automatically.
     """
 
-    func: Callable = Field(description="The wrapped function", exclude=True)
+    func: Callable = Field(
+        default=None, description="The wrapped function", exclude=True
+    )
 
     def __init__(
         self,
@@ -74,12 +87,14 @@ class FunctionTool(Tool):
         if parameters is None:
             parameters = self._extract_parameters(func)
 
+        # Initialize parent without func (it's excluded anyway)
         super().__init__(
             name=tool_name,
             description=tool_description,
             parameters=parameters,
-            func=func,
         )
+        # Set func directly after parent initialization
+        object.__setattr__(self, "func", func)
 
     def _extract_parameters(self, func: Callable) -> Dict[str, Any]:
         """
@@ -132,11 +147,14 @@ class FunctionTool(Tool):
             if param.default != inspect.Parameter.empty:
                 default_info = f" (default: {param.default})"
 
-            parameters[param_name] = f"{param_type}{default_info}"
+            parameters[param_name] = {
+                "type": param_type,
+                "description": f"{param_type}{default_info}",
+            }
 
         return parameters
 
-    async def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs: Any) -> ToolResult:
         """Execute the wrapped function."""
         start_time = time.time()
 

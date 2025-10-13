@@ -34,6 +34,7 @@ class ReactAgent(Agent):
 
         This overrides the default Agent loop to implement the ReAct pattern.
         """
+        assert self.context is not None, "Context must be initialized"
         observation = "Task received. Ready to begin."
 
         while self.context.iteration < self.max_iterations:
@@ -121,6 +122,7 @@ class ReactAgent(Agent):
         Returns:
             ReactThought with reasoning and action decision
         """
+        assert self.context is not None, "Context must be initialized"
         # Build context for reasoning
         context = {
             "goal": str(goal),
@@ -140,8 +142,10 @@ class ReactAgent(Agent):
                     "iteration": cycle.iteration,
                     "reasoning": (
                         cycle.thought.reasoning
-                        if hasattr(cycle.thought, "reasoning")
+                        if cycle.thought and hasattr(cycle.thought, "reasoning")
                         else str(cycle.thought)
+                        if cycle.thought
+                        else ""
                     ),
                     "action": (cycle.tool_calls[0].name if cycle.tool_calls else None),
                     "result": (
@@ -184,7 +188,7 @@ IMPORTANT:
             name="react_reason",
             instructions=instructions,
             input=context,
-            output_schema=ReactThought,
+            output_schema=ReactThought,  # type: ignore[arg-type]
             model=self.model,
             parent_span_id=self.context.parent_span_id,
         )

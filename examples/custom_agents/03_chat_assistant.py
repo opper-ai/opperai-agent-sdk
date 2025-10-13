@@ -17,6 +17,7 @@ Key differences:
 import os
 import sys
 import asyncio
+from typing import Any
 
 # Add src to path for development
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
@@ -70,20 +71,20 @@ def search_knowledge(query: str) -> str:
 
 # --- Event Hooks for Visibility ---
 @hook("agent_start")
-async def on_conversation_start(context, agent):
+async def on_conversation_start(context: Any, agent: Any) -> None:
     """Track conversation turns."""
     turn_number = len(agent.conversation.messages) // 2 + 1
     print(f"\n[Turn {turn_number}]")
 
 
 @hook("agent_end")
-async def on_conversation_end(context, agent, result):
+async def on_conversation_end(context: Any, agent: Any, result: Any) -> None:
     """Show token usage for the turn."""
     tokens = context.usage.total_tokens if context else 0
     print(f"   (Tokens: {tokens})")
 
 
-async def interactive_chat():
+async def interactive_chat() -> None:
     """
     Interactive chat session with the ChatAgent.
 
@@ -176,7 +177,7 @@ When users ask about:
             print(f"\n❌ Error: {e}")
 
 
-async def programmatic_chat():
+async def programmatic_chat() -> None:
     """
     Programmatic chat example (non-interactive).
 
@@ -228,7 +229,7 @@ async def programmatic_chat():
     print(f"\n✓ Conversation saved to {save_path}")
 
 
-async def main():
+async def main() -> None:
     """Main entry point - choose demo mode."""
     import sys
 

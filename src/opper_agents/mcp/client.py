@@ -141,6 +141,8 @@ class MCPClient:
             write_stream: Any
 
             if self.config.transport == "stdio":
+                if not self.config.command:
+                    raise ValueError("stdio transport requires a command")
                 params = StdioServerParameters(
                     command=self.config.command,
                     args=self.config.args,
@@ -166,7 +168,7 @@ class MCPClient:
                     )
                 else:
                     # Use default GET SSE client from MCP SDK
-                    params = SseServerParameters(
+                    sse_params = SseServerParameters(
                         url=self.config.url,
                         headers=self.config.headers or None,
                         timeout=self.config.timeout,
@@ -174,10 +176,10 @@ class MCPClient:
                     )
                     read_stream, write_stream = await exit_stack.enter_async_context(
                         sse_client(
-                            url=params.url,
-                            headers=params.headers,
-                            timeout=params.timeout,
-                            sse_read_timeout=params.sse_read_timeout,
+                            url=sse_params.url,
+                            headers=sse_params.headers,
+                            timeout=sse_params.timeout,
+                            sse_read_timeout=sse_params.sse_read_timeout,
                         )
                     )
             elif self.config.transport == "streamable-http":

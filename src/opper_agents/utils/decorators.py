@@ -5,17 +5,39 @@ This module provides convenient decorators for converting functions
 into tools and marking hooks for lifecycle events.
 """
 
-from typing import Callable, Optional, Dict, Any
+from typing import Callable, Optional, Dict, Any, Union, TypeVar, overload
 from ..base.tool import FunctionTool
 
+F = TypeVar("F", bound=Callable[..., Any])
 
+
+@overload
 def tool(
-    func: Optional[Callable] = None,
+    func: None = None,
     *,
     name: Optional[str] = None,
     description: Optional[str] = None,
     parameters: Optional[Dict[str, Any]] = None,
-) -> FunctionTool:
+) -> Callable[[F], FunctionTool]: ...
+
+
+@overload
+def tool(
+    func: F,
+    *,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    parameters: Optional[Dict[str, Any]] = None,
+) -> FunctionTool: ...
+
+
+def tool(
+    func: Optional[F] = None,
+    *,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    parameters: Optional[Dict[str, Any]] = None,
+) -> Union[FunctionTool, Callable[[F], FunctionTool]]:
     """
     Decorator to convert a function into a Tool.
 
@@ -39,7 +61,7 @@ def tool(
         FunctionTool instance wrapping the function
     """
 
-    def decorator(f: Callable) -> FunctionTool:
+    def decorator(f: Callable[..., Any]) -> FunctionTool:
         return FunctionTool(f, name, description, parameters)
 
     if func is None:
@@ -50,7 +72,7 @@ def tool(
         return decorator(func)
 
 
-def hook(event_name: str) -> Callable:
+def hook(event_name: str) -> Callable[[F], F]:
     """
     Decorator to mark a function as a hook for a specific event.
 
@@ -68,9 +90,9 @@ def hook(event_name: str) -> Callable:
         Decorated function with hook metadata
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: F) -> F:
         # Mark the function with hook metadata
-        func._hook_event = event_name
+        setattr(func, "_hook_event", event_name)
         return func
 
     return decorator

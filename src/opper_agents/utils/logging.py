@@ -19,13 +19,13 @@ class AgentLogger(ABC):
     """
 
     @abstractmethod
-    def log_iteration(self, iteration: int, max_iterations: int):
+    def log_iteration(self, iteration: int, max_iterations: int) -> None:
         """Log the start of an iteration."""
         pass
 
     @abstractmethod
     @contextmanager
-    def log_thinking(self):
+    def log_thinking(self) -> Any:
         """
         Context manager for thinking phase.
         Can show spinners or progress indicators.
@@ -33,49 +33,49 @@ class AgentLogger(ABC):
         yield
 
     @abstractmethod
-    def log_thought(self, reasoning: str, tool_count: int):
+    def log_thought(self, reasoning: str, tool_count: int) -> None:
         """Log the agent's reasoning and planned actions."""
         pass
 
     @abstractmethod
-    def log_tool_call(self, tool_name: str, parameters: Dict[str, Any]):
+    def log_tool_call(self, tool_name: str, parameters: Dict[str, Any]) -> None:
         """Log a tool call."""
         pass
 
     @abstractmethod
     def log_tool_result(
         self, tool_name: str, success: bool, result: Any, error: Optional[str] = None
-    ):
+    ) -> None:
         """Log the result of a tool execution."""
         pass
 
     @abstractmethod
-    def log_memory_read(self, keys: List[str]):
+    def log_memory_read(self, keys: List[str]) -> None:
         """Log memory read operation."""
         pass
 
     @abstractmethod
-    def log_memory_loaded(self, data: Dict[str, Any]):
+    def log_memory_loaded(self, data: Dict[str, Any]) -> None:
         """Log loaded memory data."""
         pass
 
     @abstractmethod
-    def log_memory_write(self, keys: List[str]):
+    def log_memory_write(self, keys: List[str]) -> None:
         """Log memory write operation."""
         pass
 
     @abstractmethod
-    def log_final_result(self):
+    def log_final_result(self) -> None:
         """Log that the final result is being generated."""
         pass
 
     @abstractmethod
-    def log_warning(self, message: str):
+    def log_warning(self, message: str) -> None:
         """Log a warning message."""
         pass
 
     @abstractmethod
-    def log_error(self, message: str):
+    def log_error(self, message: str) -> None:
         """Log an error message."""
         pass
 
@@ -86,45 +86,45 @@ class SimpleLogger(AgentLogger):
     Minimal formatting, good for basic debugging.
     """
 
-    def log_iteration(self, iteration: int, max_iterations: int):
+    def log_iteration(self, iteration: int, max_iterations: int) -> None:
         print(f"\n--- Iteration {iteration}/{max_iterations} ---")
 
     @contextmanager
-    def log_thinking(self):
+    def log_thinking(self) -> Any:
         yield
 
-    def log_thought(self, reasoning: str, tool_count: int):
+    def log_thought(self, reasoning: str, tool_count: int) -> None:
         print(f"Reasoning: {reasoning}")
         print(f"Tool calls: {tool_count}")
 
-    def log_tool_call(self, tool_name: str, parameters: Dict[str, Any]):
+    def log_tool_call(self, tool_name: str, parameters: Dict[str, Any]) -> None:
         print(f"[TOOL CALL] - {tool_name} with {parameters}")
 
     def log_tool_result(
         self, tool_name: str, success: bool, result: Any, error: Optional[str] = None
-    ):
+    ) -> None:
         status = "SUCCESS" if success else "FAILED"
         if error:
             print(f"---> [RESULT] Status: {status} Error: {error}\n")
         else:
             print(f"---> [RESULT] Status: {status} Result: {result}\n")
 
-    def log_memory_read(self, keys: List[str]):
+    def log_memory_read(self, keys: List[str]) -> None:
         print(f"Loading memory keys: {keys}")
 
-    def log_memory_loaded(self, data: Dict[str, Any]):
+    def log_memory_loaded(self, data: Dict[str, Any]) -> None:
         print(f"Loaded memory: {data}")
 
-    def log_memory_write(self, keys: List[str]):
+    def log_memory_write(self, keys: List[str]) -> None:
         print(f"Writing to memory: {keys}")
 
-    def log_final_result(self):
+    def log_final_result(self) -> None:
         print("\n[GENERATING FINAL RESULT]\n")
 
-    def log_warning(self, message: str):
+    def log_warning(self, message: str) -> None:
         print(f"Warning: {message}")
 
-    def log_error(self, message: str):
+    def log_error(self, message: str) -> None:
         print(f"Error: {message}")
 
 
@@ -140,11 +140,11 @@ class RichLogger(AgentLogger):
     - Translucent Silk (#FFD7D7) - Light pink for warnings
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         try:
             from rich.console import Console
 
-            self.console = Console()
+            self.console: Any = Console()
             self._status = None
             self._rich_available = True
 
@@ -160,11 +160,10 @@ class RichLogger(AgentLogger):
             self._rich_available = False
             self.console = None
 
-    def log_iteration(self, iteration: int, max_iterations: int):
+    def log_iteration(self, iteration: int, max_iterations: int) -> None:
         if not self._rich_available:
             print(f"\n--- Iteration {iteration}/{max_iterations} ---")
             return
-
 
         self.console.print()
         self.console.rule(
@@ -173,11 +172,10 @@ class RichLogger(AgentLogger):
         )
 
     @contextmanager
-    def log_thinking(self):
+    def log_thinking(self) -> Any:
         if not self._rich_available:
             yield
             return
-
 
         with self.console.status(
             f"[bold {self.color_savoy_purple}]Thinking...", spinner="dots"
@@ -186,7 +184,7 @@ class RichLogger(AgentLogger):
             yield
             self._status = None
 
-    def log_thought(self, reasoning: str, tool_count: int):
+    def log_thought(self, reasoning: str, tool_count: int) -> None:
         if not self._rich_available:
             print(f"Reasoning: {reasoning}")
             print(f"Tool calls: {tool_count}")
@@ -213,7 +211,7 @@ class RichLogger(AgentLogger):
                 f"[{self.color_water_leaf}]No tool calls - ready for final result[/{self.color_water_leaf}]"
             )
 
-    def log_tool_call(self, tool_name: str, parameters: Dict[str, Any]):
+    def log_tool_call(self, tool_name: str, parameters: Dict[str, Any]) -> None:
         if not self._rich_available:
             print(f"[TOOL CALL] - {tool_name} with {parameters}")
             return
@@ -226,7 +224,7 @@ class RichLogger(AgentLogger):
 
     def log_tool_result(
         self, tool_name: str, success: bool, result: Any, error: Optional[str] = None
-    ):
+    ) -> None:
         if not self._rich_available:
             status = "SUCCESS" if success else "FAILED"
             if error:
@@ -250,7 +248,7 @@ class RichLogger(AgentLogger):
                 f"  [bold {self.color_coral}]FAILED[/bold {self.color_coral}] [{self.color_coral}]{error}[/{self.color_coral}]"
             )
 
-    def log_memory_read(self, keys: List[str]):
+    def log_memory_read(self, keys: List[str]) -> None:
         if not self._rich_available:
             print(f"Loading memory keys: {keys}")
             return
@@ -260,7 +258,7 @@ class RichLogger(AgentLogger):
             f"[{self.color_cyan}]Reading memory:[/{self.color_cyan}] [dim]{keys_str}[/dim]"
         )
 
-    def log_memory_loaded(self, data: Dict[str, Any]):
+    def log_memory_loaded(self, data: Dict[str, Any]) -> None:
         if not self._rich_available:
             print(f"Loaded memory: {data}")
             return
@@ -288,7 +286,7 @@ class RichLogger(AgentLogger):
 
         self.console.print(table)
 
-    def log_memory_write(self, keys: List[str]):
+    def log_memory_write(self, keys: List[str]) -> None:
         if not self._rich_available:
             print(f"Writing to memory: {keys}")
             return
@@ -298,7 +296,7 @@ class RichLogger(AgentLogger):
             f"[{self.color_cyan}]Writing to memory:[/{self.color_cyan}] [dim]{keys_str}[/dim]"
         )
 
-    def log_final_result(self):
+    def log_final_result(self) -> None:
         if not self._rich_available:
             print("\n[GENERATING FINAL RESULT]\n")
             return
@@ -309,7 +307,7 @@ class RichLogger(AgentLogger):
             style=self.color_water_leaf,
         )
 
-    def log_warning(self, message: str):
+    def log_warning(self, message: str) -> None:
         if not self._rich_available:
             print(f"Warning: {message}")
             return
@@ -317,7 +315,7 @@ class RichLogger(AgentLogger):
         # Use Opper light pink for warnings
         self.console.print(f"[{self.color_silk}]Warning:[/{self.color_silk}] {message}")
 
-    def log_error(self, message: str):
+    def log_error(self, message: str) -> None:
         if not self._rich_available:
             print(f"Error: {message}")
             return

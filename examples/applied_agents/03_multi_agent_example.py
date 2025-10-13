@@ -14,7 +14,8 @@ from pydantic import BaseModel, Field
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from opper_agent_old import Agent, tool, hook, RunContext
+from opper_agents import Agent, tool, hook
+from opper_agents.base.context import AgentContext
 
 
 # ============================================================================
@@ -47,7 +48,8 @@ def calculate(expression: str) -> float:
         allowed_chars = set("0123456789+-*/.() ")
         if not all(c in allowed_chars for c in expression):
             raise ValueError("Expression contains invalid characters")
-        return eval(expression)
+        result: float = eval(expression)
+        return result
     except Exception as e:
         raise ValueError(f"Calculation error: {e}")
 
@@ -149,12 +151,12 @@ physics_agent = Agent(
 
 # Event Hooks
 @hook("on_agent_start")
-async def on_routing_start(context: RunContext, agent: Agent):
+async def on_routing_start(context: AgentContext, agent: Agent) -> None:
     print(f"🎯 Routing Assistant started - Task: {context.goal}")
 
 
 @hook("on_think_end")
-async def on_routing_think(context: RunContext, agent: Agent, thought: Any):
+async def on_routing_think(context: AgentContext, agent: Agent, thought: Any) -> None:
     print(f"🤔 {thought.user_message}")
 
 
@@ -180,7 +182,7 @@ routing_assistant = Agent(
 # ============================================================================
 
 
-async def main():
+async def main() -> None:
     """Run the multi-agent system example."""
     if not os.getenv("OPPER_API_KEY"):
         print("❌ Set OPPER_API_KEY environment variable")

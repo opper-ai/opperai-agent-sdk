@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from opper_agents import ReactAgent, tool, hook
+from typing import Any
 
 
 # --- Input/Output Schemas ---
@@ -69,7 +70,7 @@ def divide_numbers(a: float, b: float) -> float:
 @tool
 def calculate_power(base: float, exponent: float) -> float:
     """Calculate base raised to the power of exponent."""
-    return base**exponent
+    return float(base**exponent)
 
 
 @tool
@@ -77,12 +78,12 @@ def calculate_square_root(number: float) -> float:
     """Calculate the square root of a number."""
     if number < 0:
         raise ValueError("Cannot calculate square root of negative number")
-    return number**0.5
+    return float(number**0.5)
 
 
 # --- Event Hooks ---
 @hook("agent_start")
-async def on_agent_start(context, agent):
+async def on_agent_start(context: Any, agent: Any) -> None:
     """Called when the agent starts processing."""
     print("\nReactAgent Math Solver Started")
     print(f"   Problem: {context.goal}")
@@ -90,7 +91,7 @@ async def on_agent_start(context, agent):
 
 
 @hook("think_end")
-async def on_think_end(context, agent, thought):
+async def on_think_end(context: Any, agent: Any, thought: Any) -> None:
     """Called after each reasoning step."""
     print(f"\n💭 Reasoning: {thought.reasoning}")
     if thought.is_complete:
@@ -100,7 +101,7 @@ async def on_think_end(context, agent, thought):
 
 
 @hook("tool_result")
-async def on_tool_result(context, agent, tool, result):
+async def on_tool_result(context: Any, agent: Any, tool: Any, result: Any) -> None:
     """Called after each tool execution."""
     if result.success:
         print(f"   ✓ Result: {result.result}")
@@ -109,7 +110,7 @@ async def on_tool_result(context, agent, tool, result):
 
 
 @hook("agent_end")
-async def on_agent_end(context, agent, result):
+async def on_agent_end(context: Any, agent: Any, result: Any) -> None:
     """Called when the agent finishes."""
     print("-" * 60)
     print(f"\n Final Answer: {result}")
@@ -117,7 +118,7 @@ async def on_agent_end(context, agent, result):
     print(f" Token usage: {context.usage.total_tokens}")
 
 
-async def main():
+async def main() -> None:
     if not os.getenv("OPPER_API_KEY"):
         print(" Error: Set OPPER_API_KEY environment variable")
         print("   Example: export OPPER_API_KEY=your-key-here")

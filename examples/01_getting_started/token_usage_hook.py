@@ -39,7 +39,7 @@ def get_user_input(query: str) -> str:
 
 
 @hook("loop_start")
-async def on_loop_start(context: AgentContext, agent: BaseAgent):
+async def on_loop_start(context: AgentContext, agent: BaseAgent) -> None:
     """Called at the start of each iteration loop - shows usage so far."""
     print(f"\nLoop iteration {context.iteration + 1} starting")
     print("  Token usage so far:")
@@ -50,7 +50,7 @@ async def on_loop_start(context: AgentContext, agent: BaseAgent):
 
 
 @hook("loop_end")
-async def on_loop_end(context: AgentContext, agent: BaseAgent):
+async def on_loop_end(context: AgentContext, agent: BaseAgent) -> None:
     """Called at the end of each iteration loop - shows updated usage."""
     print(f"\nLoop iteration {context.iteration} completed")
     print("  Token usage after this loop:")
@@ -63,7 +63,7 @@ async def on_loop_end(context: AgentContext, agent: BaseAgent):
 @hook("tool_call")
 async def on_tool_call(
     context: AgentContext, agent: BaseAgent, tool: Tool, parameters: dict
-):
+) -> None:
     """Called before executing a tool."""
     print(f"\nCalling tool '{tool.name}'")
     print(f"   Parameters: {parameters}")
@@ -72,14 +72,14 @@ async def on_tool_call(
 @hook("tool_result")
 async def on_tool_result(
     context: AgentContext, agent: BaseAgent, tool: Tool, result: ToolResult
-):
+) -> None:
     """Called after tool execution."""
     status = "SUCCESS" if result.success else "FAILED"
     print(f"   [{status}] Tool '{tool.name}' result: {result.result}")
     print(f"   Execution time: {result.execution_time:.3f}s")
 
 
-async def main():
+async def main() -> None:
     """Run a quick test of the agent."""
 
     # Create agent with all hooks

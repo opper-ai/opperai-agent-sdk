@@ -22,6 +22,7 @@ from typing import List
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from opper_agents import ReactAgent, tool, hook
+from typing import Any
 
 
 # --- Schemas ---
@@ -102,7 +103,7 @@ def verify_information(claim: str) -> dict:
 
 # --- Event Hooks for Progress Tracking ---
 @hook("agent_start")
-async def on_start(context, agent):
+async def on_start(context: Any, agent: Any) -> None:
     """Track research start."""
     print("\nReactAgent Research Assistant Started")
     print(f"   Topic: {context.goal}")
@@ -110,13 +111,13 @@ async def on_start(context, agent):
 
 
 @hook("loop_start")
-async def on_iteration_start(context, agent):
+async def on_iteration_start(context: Any, agent: Any) -> None:
     """Track each iteration."""
     print(f"\n[Iteration {context.iteration + 1}]")
 
 
 @hook("think_end")
-async def on_reasoning(context, agent, thought):
+async def on_reasoning(context: Any, agent: Any, thought: Any) -> None:
     """Display agent's reasoning."""
     print(f"Thought: {thought.reasoning}")
     if thought.action:
@@ -124,7 +125,7 @@ async def on_reasoning(context, agent, thought):
 
 
 @hook("tool_result")
-async def on_result(context, agent, tool, result):
+async def on_result(context: Any, agent: Any, tool: Any, result: Any) -> None:
     """Display tool results."""
     if result.success:
         result_preview = str(result.result)[:100]
@@ -136,7 +137,7 @@ async def on_result(context, agent, tool, result):
 
 
 @hook("agent_end")
-async def on_complete(context, agent, result):
+async def on_complete(context: Any, agent: Any, result: Any) -> None:
     """Display final results."""
     print("-" * 70)
     print("\nResearch Complete!")
@@ -144,7 +145,7 @@ async def on_complete(context, agent, result):
     print(f"   Tokens used: {context.usage.total_tokens}")
 
 
-async def main():
+async def main() -> None:
     if not os.getenv("OPPER_API_KEY"):
         print("Error: Set OPPER_API_KEY environment variable")
         sys.exit(1)

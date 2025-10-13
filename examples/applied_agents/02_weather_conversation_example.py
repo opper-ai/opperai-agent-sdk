@@ -11,6 +11,7 @@ import asyncio
 import time
 from typing import Any, List, Optional
 from pydantic import BaseModel, Field
+from opper_agents.utils.logging import RichLogger
 
 from opper_agents import Agent, tool, hook
 from opper_agents.base.context import AgentContext
@@ -73,14 +74,14 @@ def get_current_time(location: str) -> str:
 
 # --- Hooks ---
 @hook("agent_start")
-async def on_agent_start(context: AgentContext, agent: Agent):
+async def on_agent_start(context: AgentContext, agent: Agent) -> None:
     """Hook triggered when agent starts execution."""
     print("🤖 Weather Agent started")
     print(f"   Input: {context.goal}")
 
 
 @hook("think_end")
-async def on_think_end(context: AgentContext, agent: Agent, thought: Any):
+async def on_think_end(context: AgentContext, agent: Agent, thought: Any) -> None:
     """Post-thinking hook to analyze the agent's reasoning."""
     print("💭 Agent thinking:")
     print(f"   Reasoning: {thought.reasoning[:100]}...")
@@ -89,7 +90,7 @@ async def on_think_end(context: AgentContext, agent: Agent, thought: Any):
 
 
 @hook("agent_end")
-async def on_agent_end(context: AgentContext, agent: Agent, result: Any):
+async def on_agent_end(context: AgentContext, agent: Agent, result: Any) -> None:
     """Hook triggered when agent completes execution."""
     print("✅ Agent completed")
     print(f"   Iterations: {context.iteration}")
@@ -97,7 +98,7 @@ async def on_agent_end(context: AgentContext, agent: Agent, result: Any):
 
 
 # --- Main Demo Function ---
-async def main():
+async def main() -> None:
     if not os.getenv("OPPER_API_KEY"):
         print("❌ Set OPPER_API_KEY environment variable")
         return
@@ -114,6 +115,7 @@ async def main():
         input_schema=ConversationInput,
         output_schema=AgentMessage,
         verbose=True,
+        logger=RichLogger(),
         hooks=[on_agent_start, on_think_end, on_agent_end],
     )
 

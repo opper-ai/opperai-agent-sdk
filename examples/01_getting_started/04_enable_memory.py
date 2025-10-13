@@ -53,7 +53,7 @@ def get_weather(city: str) -> str:
     return weather_data.get(city.lower(), f"Weather data not available for {city}")
 
 
-async def main():
+async def main() -> None:
     """Run a multi-task agent example with memory."""
 
     # Create agent with memory enabled

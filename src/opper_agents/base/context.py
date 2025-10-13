@@ -135,7 +135,7 @@ class AgentContext(BaseModel):
 
 
 # Defer model rebuilding until Memory is imported
-def _rebuild_if_memory_available():
+def _rebuild_if_memory_available() -> None:
     """Rebuild AgentContext model once Memory is available."""
     try:
         from ..memory.memory import Memory  # noqa: F401

@@ -16,6 +16,7 @@ The current hooks available are:
 """
 
 import asyncio
+from typing import Any
 from opper_agents import Agent, tool, hook
 from opper_agents.base.context import AgentContext
 from opper_agents.base.agent import BaseAgent
@@ -53,7 +54,7 @@ def get_user_input(query: str) -> str:
 
 # Hook definitions - demonstrating all available hooks
 @hook("agent_start")
-async def on_agent_start(context: AgentContext, agent: BaseAgent):
+async def on_agent_start(context: AgentContext, agent: BaseAgent) -> None:
     """Called when agent execution starts."""
     print(f"\nHOOK [on_agent_start]: Agent '{agent.name}' starting execution")
     print(f"   Goal: {context.goal}")
@@ -61,7 +62,7 @@ async def on_agent_start(context: AgentContext, agent: BaseAgent):
 
 
 @hook("agent_end")
-async def on_agent_end(context: AgentContext, agent: BaseAgent, result):
+async def on_agent_end(context: AgentContext, agent: BaseAgent, result: object) -> None:
     """Called when agent execution ends successfully."""
     elapsed = asyncio.get_event_loop().time() - context.metadata.get(
         "start_timestamp", 0
@@ -72,19 +73,21 @@ async def on_agent_end(context: AgentContext, agent: BaseAgent, result):
 
 
 @hook("agent_error")
-async def on_agent_error(context: AgentContext, agent: BaseAgent, error: Exception):
+async def on_agent_error(
+    context: AgentContext, agent: BaseAgent, error: Exception
+) -> None:
     """Called when agent encounters an error."""
     print(f"\nHOOK [on_agent_error]: Agent '{agent.name}' encountered error: {error}")
 
 
 @hook("loop_start")
-async def on_loop_start(context: AgentContext, agent: BaseAgent):
+async def on_loop_start(context: AgentContext, agent: BaseAgent) -> None:
     """Called at the start of each iteration loop."""
     print(f"\nHOOK [on_loop_start]: Loop iteration {context.iteration + 1} starting")
 
 
 @hook("loop_end")
-async def on_loop_end(context: AgentContext, agent: BaseAgent):
+async def on_loop_end(context: AgentContext, agent: BaseAgent) -> None:
     """Called at the end of each iteration loop."""
     cycle = context.execution_history[-1] if context.execution_history else None
     if cycle:
@@ -94,21 +97,21 @@ async def on_loop_end(context: AgentContext, agent: BaseAgent):
 
 
 @hook("llm_call")
-async def on_llm_call(context: AgentContext, agent: BaseAgent, call_type: str):
+async def on_llm_call(context: AgentContext, agent: BaseAgent, call_type: str) -> None:
     """Called before making an LLM call."""
     print(f"\nHOOK [on_llm_call]: Making LLM call (type: {call_type})")
 
 
 @hook("llm_response")
 async def on_llm_response(
-    context: AgentContext, agent: BaseAgent, call_type: str, response
-):
+    context: AgentContext, agent: BaseAgent, call_type: str, response: object
+) -> None:
     """Called after receiving LLM response."""
     print(f"   [on_llm_response] LLM response received (type: {call_type})")
 
 
 @hook("think_end")
-async def on_think_end(context: AgentContext, agent: BaseAgent, thought):
+async def on_think_end(context: AgentContext, agent: BaseAgent, thought: Any) -> None:
     """Called after the think/reasoning step."""
     print("\nHOOK [on_think_end]: Thought completed")
     print(f"   Reasoning: {thought.reasoning[:100]}...")
@@ -118,7 +121,7 @@ async def on_think_end(context: AgentContext, agent: BaseAgent, thought):
 @hook("tool_call")
 async def on_tool_call(
     context: AgentContext, agent: BaseAgent, tool: Tool, parameters: dict
-):
+) -> None:
     """Called before executing a tool."""
     print(f"\nHOOK [on_tool_call]: Calling tool '{tool.name}'")
     print(f"   Parameters: {parameters}")
@@ -127,14 +130,14 @@ async def on_tool_call(
 @hook("tool_result")
 async def on_tool_result(
     context: AgentContext, agent: BaseAgent, tool: Tool, result: ToolResult
-):
+) -> None:
     """Called after tool execution."""
     status = "✓" if result.success else "✗"
     print(f"   [on_tool_result] {status} Tool '{tool.name}' result: {result.result}")
     print(f"   Execution time: {result.execution_time:.3f}s")
 
 
-async def main():
+async def main() -> None:
     """Run a quick test of the agent."""
 
     # Create agent with all hooks

@@ -69,7 +69,7 @@ class MCPServerConfig(BaseModel):
     )
 
     @model_validator(mode="after")
-    def validate_transport_requirements(self):
+    def validate_transport_requirements(self) -> "MCPServerConfig":
         """
         Validate transport-specific requirements.
 

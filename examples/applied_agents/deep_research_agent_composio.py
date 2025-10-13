@@ -1,10 +1,13 @@
 # Lets build a deep research style agent with Opper Agent SDK and Composio via MCP
 
 import asyncio
+import os
+import sys
 
 # Lets start with importing the Opper Agent SDK
 from opper_agents import Agent, hook, tool, mcp, MCPServerConfig
 from opper_agents.base.context import AgentContext
+from opper_agents.utils.logging import RichLogger
 
 # deps
 from pydantic import BaseModel, Field
@@ -35,17 +38,34 @@ class ResearchFindings(BaseModel):
     detailed_analysis: str = Field(description="In-depth analysis of the topic")
 
 
+# Get Composio URL from environment variable
+composio_url = os.getenv("COMPOSIO_SEARCH_MCP_URL")
+
+if not composio_url:
+    print("\nERROR: COMPOSIO_SEARCH_MCP_URL environment variable is not set!")
+    print("\nTo get your Composio MCP URL:")
+    print("1. Go to https://app.composio.dev/")
+    print("2. Sign up or log in to your account")
+    print("3. Navigate to the MCP section")
+    print("4. Get your Search MCP endpoint URL")
+    print("   (should include 'include_composio_helper_actions=true')")
+    print("\nThen set the environment variable:")
+    print('  export COMPOSIO_SEARCH_MCP_URL="your-composio-url-here"')
+    print("\nOr run this script with:")
+    print('  COMPOSIO_SEARCH_MCP_URL="your-url" python deep_research_agent_composio.py')
+    sys.exit(1)
+
 # Configure Composio MCP server for search tools
 composio_config = MCPServerConfig(
     name="composio-search",
     transport="streamable-http",
-    url="https://backend.composio.dev/v3/mcp/YOUR-ID/mcp?include_composio_helper_actions=true",  # NOTE you need a composio search link
+    url=composio_url,
 )
 
 
 # Actually lets add a hook so we can peek into the agents reasoning as it is working
 @hook("loop_end")
-async def on_loop_end(context: AgentContext, agent: Agent):
+async def on_loop_end(context: AgentContext, agent: Agent) -> None:
     """Print agent's reasoning after each iteration."""
     if context.execution_history:
         latest = context.execution_history[-1]
@@ -70,7 +90,7 @@ def save_report(report: str) -> str:
     return "Report saved to report.md"
 
 
-async def main():
+async def main() -> None:
     # Lets add some more detailed instructions to the agent
     instructions = """
     You are a comprehensive research agent that can use the search tools to find information on the web and the content tools to extract content and build a comprehensive report on the topic.
@@ -95,16 +115,17 @@ async def main():
             save_report,  # Custom local tool
         ],
         model="groq/gpt-oss-120b",  # Fast and cheap! But you can use any model you want.
-        max_iterations=50,  # Give it plenty of iterations for deep research
+        max_iterations=10,  # Give it plenty of iterations for deep research
         verbose=True,
+        logger=RichLogger(),
     )
 
     result = await agent.process(
         ResearchRequest(
-            topic="What is Opper AI?",
+            topic="What is Opper AI?",  
             depth="comprehensive",
             focus_areas=["traction", "team", "product", "innovation"],
-            sources_required=15,
+            sources_required=3,
         )
     )
     print("\n" + "=" * 60)

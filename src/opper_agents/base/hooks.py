@@ -13,7 +13,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Type alias for hook functions
-HookFunction = Callable[[AgentContext, ...], Any]
+HookFunction = Callable[..., Any]
 
 
 class HookEvents:
@@ -54,12 +54,12 @@ class HookManager:
         if self.verbose:
             logger.info(f"Registered hook for event: {event}")
 
-    def register_multiple(self, hooks: List[tuple]) -> None:
+    def register_multiple(self, hooks: List[tuple[str, HookFunction]]) -> None:
         """Register multiple hooks at once. Each tuple is (event, hook_func)."""
         for event, hook in hooks:
             self.register(event, hook)
 
-    async def trigger(self, event: str, context: AgentContext, **kwargs) -> None:
+    async def trigger(self, event: str, context: AgentContext, **kwargs: Any) -> None:
         """
         Trigger all hooks for an event.
         Hooks that fail don't stop execution.

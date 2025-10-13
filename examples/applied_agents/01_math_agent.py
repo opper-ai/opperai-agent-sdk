@@ -12,7 +12,8 @@ from pydantic import BaseModel, Field
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from opper_agent_old import Agent, tool, hook, RunContext
+from opper_agents import Agent, tool, hook
+from opper_agents.base.context import AgentContext
 
 
 # --- Input/Output Schemas ---
@@ -58,7 +59,7 @@ def divide_numbers(a: float, b: float) -> float:
 @tool
 def calculate_power(base: float, exponent: float) -> float:
     """Calculate base raised to the power of exponent."""
-    return base**exponent
+    return float(base**exponent)
 
 
 @tool
@@ -66,23 +67,23 @@ def calculate_square_root(number: float) -> float:
     """Calculate the square root of a number."""
     if number < 0:
         raise ValueError("Cannot calculate square root of negative number")
-    return number**0.5
+    return float(number**0.5)
 
 
 # --- Event Hooks ---
 @hook("on_agent_start")
-async def on_agent_start(context: RunContext, agent: Agent):
+async def on_agent_start(context: AgentContext, agent: Agent) -> None:
     print("🧮 Math Agent started")
     print(f"   Problem: {context.goal}")
 
 
 @hook("on_think_end")
-async def on_think_end(context: RunContext, agent: Agent, thought: Any):
+async def on_think_end(context: AgentContext, agent: Agent, thought: Any) -> None:
     """Post-thinking hook to analyze the agent's reasoning."""
     print(f"{thought.user_message}")
 
 
-async def main():
+async def main() -> None:
     if not os.getenv("OPPER_API_KEY"):
         print("❌ Set OPPER_API_KEY environment variable")
         sys.exit(1)

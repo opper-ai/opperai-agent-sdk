@@ -76,7 +76,7 @@ class BaseAgent(ABC):
 
         # Logger setup
         if logger is not None:
-            self.logger = logger
+            self.logger: Optional[AgentLogger] = logger
         elif verbose:
             self.logger = SimpleLogger()
         else:
@@ -122,9 +122,7 @@ class BaseAgent(ABC):
 
         return manager
 
-    def _initialize_tools(
-        self, raw_tools: Sequence[Union[Tool, ToolProvider]]
-    ) -> None:
+    def _initialize_tools(self, raw_tools: Sequence[Union[Tool, ToolProvider]]) -> None:
         """Separate concrete tools from providers."""
         for item in raw_tools:
             if isinstance(item, Tool):
@@ -226,11 +224,13 @@ class BaseAgent(ABC):
                 pass
 
         def agent_tool(
-            task: str = None, _parent_span_id: Optional[str] = None, **kwargs
+            task: Optional[str] = None,
+            _parent_span_id: Optional[str] = None,
+            **kwargs: Any,
         ) -> Any:
             """Tool function that delegates to agent."""
 
-            async def call_agent():
+            async def call_agent() -> Any:
                 # If input_schema exists and we have kwargs, use them directly
                 if self.input_schema and kwargs:
                     input_data = kwargs
@@ -249,7 +249,7 @@ class BaseAgent(ABC):
             try:
                 asyncio.get_running_loop()
 
-                def run_in_thread():
+                def run_in_thread() -> Any:
                     new_loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(new_loop)
                     try:

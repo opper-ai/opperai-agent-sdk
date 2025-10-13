@@ -15,6 +15,8 @@ NOTE: You'll need to get your own Composio MCP endpoint URL and set it as an env
 """
 
 import asyncio
+import os
+import sys
 from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 
@@ -34,7 +36,7 @@ class GmailResults(BaseModel):
 
 
 @hook("loop_end")
-async def on_loop_end(context: AgentContext, agent: Agent):
+async def on_loop_end(context: AgentContext, agent: Agent) -> None:
     """Print agent's reasoning after each iteration."""
     if context.execution_history:
         latest = context.execution_history[-1]
@@ -42,17 +44,32 @@ async def on_loop_end(context: AgentContext, agent: Agent):
             print(f"\n[Iteration {latest.iteration}] {latest.thought.reasoning}\n")
 
 
-async def main():
+async def main() -> None:
     """Run the Gmail agent with MCP integration."""
     print("Gmail MCP Integration Example")
     print("=" * 50)
 
+    # Get Composio URL from environment variable
+    composio_url = os.getenv("COMPOSIO_GMAIL_MCP_URL")
+
+    if not composio_url:
+        print("\nERROR: COMPOSIO_GMAIL_MCP_URL environment variable is not set!")
+        print("\nTo get your Composio MCP URL:")
+        print("1. Go to https://app.composio.dev/")
+        print("2. Sign up or log in to your account")
+        print("3. Navigate to the MCP section")
+        print("4. Get your Gmail MCP endpoint URL")
+        print("\nThen set the environment variable:")
+        print('  export COMPOSIO_GMAIL_MCP_URL="your-composio-url-here"')
+        print("\nOr run this script with:")
+        print('  COMPOSIO_GMAIL_MCP_URL="your-url" python composio_gmail_mcp.py')
+        sys.exit(1)
+
     # Configure Composio Gmail MCP server
-    # IMPORTANT: Replace this URL with your own Composio credentials
     gmail_config = MCPServerConfig(
         name="composio-gmail",
         transport="streamable-http",
-        url="Your composio url",
+        url=composio_url,
     )
 
     print("Creating Gmail Agent with MCP tools...")

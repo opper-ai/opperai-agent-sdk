@@ -106,7 +106,7 @@ coordinator_agent_v2 = Agent(
 )
 
 
-async def main():
+async def main() -> None:
     """Run the example."""
 
     # Example 1: Using as_tool() approach

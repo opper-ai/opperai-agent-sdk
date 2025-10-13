@@ -15,7 +15,7 @@ import os
 from opper_agents import Agent, mcp, MCPServerConfig
 
 
-async def main():
+async def main() -> None:
     # Filesystem MCP server configuration (via Docker)
     # Mounts current directory to /workspace in container
     # Note: npm notices are suppressed via NPM_CONFIG_UPDATE_NOTIFIER=false

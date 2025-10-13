@@ -117,7 +117,7 @@ class ChatAgent(Agent):
         ```
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """
         Initialize ChatAgent.
 
@@ -133,7 +133,7 @@ class ChatAgent(Agent):
         # Initialize conversation
         self.conversation = Conversation()
 
-    async def process(self, message: str, **kwargs: Any) -> str:
+    async def process(self, message: str, **kwargs: Any) -> str:  # type: ignore[override]
         """
         Process a user message in conversation context.
 

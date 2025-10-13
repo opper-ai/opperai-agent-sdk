@@ -24,7 +24,7 @@ class Agent(BaseAgent):
     - If tool_calls == 0: Generate final result
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize agent with additional options."""
         # Extract Agent-specific options
         self.clean_tool_results = kwargs.pop("clean_tool_results", False)
@@ -129,6 +129,7 @@ class Agent(BaseAgent):
 
         Returns when thought.tool_calls is empty.
         """
+        assert self.context is not None, "Context must be initialized"
         while self.context.iteration < self.max_iterations:
             await self.hook_manager.trigger(
                 HookEvents.LOOP_START, self.context, agent=self
@@ -258,6 +259,7 @@ class Agent(BaseAgent):
 
     async def _think(self, goal: Any) -> Thought:
         """Call LLM to reason about next actions."""
+        assert self.context is not None, "Context must be initialized"
 
         # Build memory catalog if memory is enabled
         memory_catalog = None
@@ -286,8 +288,10 @@ class Agent(BaseAgent):
                     "iteration": cycle.iteration,
                     "thought": (
                         cycle.thought.reasoning
-                        if hasattr(cycle.thought, "reasoning")
+                        if cycle.thought and hasattr(cycle.thought, "reasoning")
                         else str(cycle.thought)
+                        if cycle.thought
+                        else ""
                     ),
                     "results": [
                         {
@@ -351,7 +355,7 @@ The memory you write persists across all process() calls on this agent.
             name="think",
             instructions=instructions,
             input=context,
-            output_schema=Thought,
+            output_schema=Thought,  # type: ignore[arg-type]
             model=self.model,
             parent_span_id=self.context.parent_span_id,
         )
@@ -379,6 +383,7 @@ The memory you write persists across all process() calls on this agent.
 
     async def _execute_tool(self, tool_call: ToolCall) -> ToolResult:
         """Execute a single tool call and create a span for it."""
+        assert self.context is not None, "Context must be initialized"
 
         if self.logger:
             self.logger.log_tool_call(tool_call.name, tool_call.parameters)
@@ -440,6 +445,7 @@ The memory you write persists across all process() calls on this agent.
         This method is shielded from AnyIO cancel scopes to prevent issues when
         MCP stdio clients have been disconnected (which can leave cancel scopes active).
         """
+        assert self.context is not None, "Context must be initialized"
         import anyio
 
         context = {
@@ -469,7 +475,7 @@ Follow any instructions provided for formatting and style."""
                 name="generate_final_result",
                 instructions=instructions,
                 input=context,
-                output_schema=self.output_schema,
+                output_schema=self.output_schema,  # type: ignore[arg-type]
                 model=self.model,
                 parent_span_id=self.context.parent_span_id,
             )
@@ -492,6 +498,7 @@ Follow any instructions provided for formatting and style."""
             return
 
         try:
+            assert self.context is not None, "Context must be initialized"
             from ..base.context import Usage
 
             usage_dict = response.usage

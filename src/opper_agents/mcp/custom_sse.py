@@ -22,7 +22,7 @@ async def sse_client_post(
     headers: dict[str, Any] | None = None,
     timeout: float = 5,
     sse_read_timeout: float = 300,
-):
+) -> Any:
     """
     SSE client that uses POST method instead of GET.
 
