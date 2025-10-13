@@ -59,6 +59,7 @@ coordinator_agent_v1 = Agent(
 
 # APPROACH 2: Manual wrapping with @tool - More control over interface
 # This gives you full control over the tool's signature and behavior
+# Note: We create fresh agent instances inside the tool to avoid event loop issues
 @tool
 async def calculate(expression: str) -> str:
     """
@@ -70,7 +71,19 @@ async def calculate(expression: str) -> str:
     Returns:
         The calculated result
     """
-    result = await math_agent.process(expression)
+    # Create a fresh agent instance for this call
+    agent = Agent(
+        name="MathAgent",
+        description="Performs mathematical calculations",
+        instructions="""
+        You are a math expert. When given a calculation request,
+        perform it and return just the numeric result.
+        Be precise and show your work briefly.
+        """,
+        verbose=False,
+        opper_api_key=os.getenv("OPPER_API_KEY"),
+    )
+    result = await agent.process(expression)
     return str(result)
 
 
@@ -89,7 +102,19 @@ async def research_topic(topic: str, focus: str = "general") -> str:
     query = f"Explain {topic}"
     if focus != "general":
         query += f" with focus on {focus}"
-    result = await research_agent.process(query)
+
+    # Create a fresh agent instance for this call
+    agent = Agent(
+        name="ResearchAgent",
+        description="Researches and explains concepts",
+        instructions="""
+        You are a research expert. When given a topic, provide
+        a clear, concise explanation with relevant details.
+        """,
+        verbose=False,
+        opper_api_key=os.getenv("OPPER_API_KEY"),
+    )
+    result = await agent.process(query)
     return str(result)
 
 
