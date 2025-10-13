@@ -138,7 +138,7 @@ class AgentContext(BaseModel):
 def _rebuild_if_memory_available():
     """Rebuild AgentContext model once Memory is available."""
     try:
-        from ..memory.memory import Memory
+        from ..memory.memory import Memory  # noqa: F401
 
         AgentContext.model_rebuild()
     except ImportError:

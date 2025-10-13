@@ -6,11 +6,14 @@ including function wrapping and execution handling.
 """
 
 from pydantic import BaseModel, Field
-from typing import Dict, Any, Callable, Optional, List, Union, Sequence, Protocol, Tuple
+from typing import Dict, Any, Callable, Optional, List, Union, Sequence, Protocol, Tuple, TYPE_CHECKING
 from abc import ABC, abstractmethod
 import inspect
 import asyncio
 import time
+
+if TYPE_CHECKING:
+    from .agent import BaseAgent
 
 
 class ToolResult(BaseModel):

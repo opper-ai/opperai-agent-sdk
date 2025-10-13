@@ -143,7 +143,7 @@ async def test_agent_multiple_tool_calls(mock_opper_client):
     agent = Agent(
         name="MathAgent", tools=[add, multiply], verbose=False, opper_api_key="test-key"
     )
-    result = await agent.process("Calculate")
+    await agent.process("Calculate")
 
     # Check that context has the execution history
     assert agent.context.iteration == 1  # One full cycle
@@ -192,7 +192,7 @@ async def test_agent_tool_not_found(mock_opper_client):
     agent = Agent(
         name="TestAgent", tools=[add], verbose=False, opper_api_key="test-key"
     )
-    result = await agent.process("Test")
+    await agent.process("Test")
 
     # Check that tool error was recorded
     cycle = agent.context.execution_history[0]
@@ -233,7 +233,7 @@ async def test_agent_tool_execution_error(mock_opper_client):
     agent = Agent(
         name="TestAgent", tools=[failing_tool], verbose=False, opper_api_key="test-key"
     )
-    result = await agent.process("Test")
+    await agent.process("Test")
 
     # Check that tool error was caught and recorded
     cycle = agent.context.execution_history[0]
@@ -302,7 +302,7 @@ async def test_agent_max_iterations(mock_opper_client):
         AsyncMock(message="Stopped at max iterations"),
     ]
 
-    result = await agent.process("Keep calculating")
+    await agent.process("Keep calculating")
 
     assert agent.context.iteration == 3
     assert len(agent.context.execution_history) == 3
@@ -340,7 +340,7 @@ async def test_agent_with_memory_updates(mock_opper_client):
         verbose=False,
         opper_api_key="test-key",
     )
-    result = await agent.process("Save state")
+    await agent.process("Save state")
 
     # Check memory was updated
     assert agent.context.memory.has_entries()
@@ -437,7 +437,7 @@ async def test_agent_span_hierarchy(mock_opper_client):
     agent = Agent(
         name="MathAgent", tools=[add], verbose=False, opper_api_key="test-key"
     )
-    result = await agent.process("What is 2 + 3?")
+    await agent.process("What is 2 + 3?")
 
     # Verify parent span was created (first call)
     assert mock_opper_client.spans.create_async.call_count == 2  # parent + 1 tool
@@ -519,7 +519,7 @@ async def test_tool_call_span_creation(mock_opper_client):
         verbose=False,
         opper_api_key="test-key",
     )
-    result = await agent.process("Calculate")
+    await agent.process("Calculate")
 
     # Verify spans were created: 1 parent + 2 tool spans
     assert mock_opper_client.spans.create_async.call_count == 3
@@ -598,7 +598,7 @@ async def test_tool_call_span_with_error(mock_opper_client):
         verbose=False,
         opper_api_key="test-key",
     )
-    result = await agent.process("Test")
+    await agent.process("Test")
 
     # Verify tool span was updated with error
     tool_update_calls = [
@@ -643,7 +643,7 @@ async def test_agent_input_schema_validation(mock_opper_client):
     )
 
     # Test with dict input (should be validated)
-    result = await agent.process({"task": "test task", "priority": 5})
+    await agent.process({"task": "test task", "priority": 5})
     assert agent.context.goal.task == "test task"
     assert agent.context.goal.priority == 5
 
@@ -703,7 +703,7 @@ async def test_agent_usage_tracking(mock_opper_client):
     agent = Agent(
         name="MathAgent", tools=[add], verbose=False, opper_api_key="test-key"
     )
-    result = await agent.process("What is 5 + 3?")
+    await agent.process("What is 5 + 3?")
 
     # Verify usage was tracked
     assert agent.context.usage.requests == 3  # Three LLM calls
@@ -781,7 +781,7 @@ async def test_agent_with_memory_reads(mock_opper_client):
         verbose=False,
         opper_api_key="test-key",
     )
-    result = await agent.process("Check budget")
+    await agent.process("Check budget")
 
     # Verify memory was written
     assert agent.context.memory.has_entries()

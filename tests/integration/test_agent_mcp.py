@@ -124,7 +124,7 @@ async def test_agent_with_single_mcp_server(
         )
 
         # Process goal
-        result = await agent.process("Search for testing documentation")
+        await agent.process("Search for testing documentation")
 
         # Verify MCP tool was called
         assert session.call_tool_mock.called
@@ -216,7 +216,7 @@ async def test_agent_with_multiple_mcp_servers(
             max_iterations=5,
         )
 
-        result = await agent.process("Read test.txt")
+        await agent.process("Read test.txt")
 
         # Verify tool from first server was called
         assert session1.call_tool_mock.called
@@ -276,7 +276,7 @@ async def test_agent_with_mcp_and_regular_tools(
             max_iterations=1,
         )
 
-        result = await agent.process("Calculate 5 * 2")
+        await agent.process("Calculate 5 * 2")
 
         # Regular tool should work
         # Note: We can't easily verify execution without running full agent loop
@@ -405,7 +405,7 @@ async def test_agent_mcp_tool_error_handling(
         )
 
         # Should not raise, should handle error gracefully
-        result = await agent.process("Do something")
+        await agent.process("Do something")
 
         # Verify we tried to call the tool
         assert session.call_tool_mock.called

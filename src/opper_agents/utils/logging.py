@@ -143,13 +143,9 @@ class RichLogger(AgentLogger):
     def __init__(self):
         try:
             from rich.console import Console
-            from rich.panel import Panel
-            from rich.syntax import Syntax
-            from rich.status import Status
-            from rich.table import Table
 
             self.console = Console()
-            self._status: Optional[Status] = None
+            self._status = None
             self._rich_available = True
 
             # Opper brand colors

@@ -14,7 +14,7 @@ import asyncio
 import concurrent.futures
 
 from .context import AgentContext
-from .tool import Tool, FunctionTool
+from .tool import Tool, FunctionTool, ToolProvider
 from .hooks import HookManager
 from ..utils.logging import AgentLogger, SimpleLogger
 
@@ -39,7 +39,7 @@ class BaseAgent(ABC):
         name: str,
         description: Optional[str] = None,
         instructions: Optional[str] = None,
-        tools: Optional[Sequence[Union[Tool, "ToolProvider"]]] = None,
+        tools: Optional[Sequence[Union[Tool, ToolProvider]]] = None,
         input_schema: Optional[Type[BaseModel]] = None,
         output_schema: Optional[Type[BaseModel]] = None,
         hooks: Optional[Union[List[Callable], HookManager]] = None,
@@ -88,8 +88,8 @@ class BaseAgent(ABC):
 
         # Tools
         self.base_tools: List[Tool] = []
-        self.tool_providers: List["ToolProvider"] = []
-        self.active_provider_tools: Dict["ToolProvider", List[Tool]] = {}
+        self.tool_providers: List[ToolProvider] = []
+        self.active_provider_tools: Dict[ToolProvider, List[Tool]] = {}
         self.tools: List[Tool] = []
         self._initialize_tools(tools or [])
 
@@ -123,7 +123,7 @@ class BaseAgent(ABC):
         return manager
 
     def _initialize_tools(
-        self, raw_tools: Sequence[Union[Tool, "ToolProvider"]]
+        self, raw_tools: Sequence[Union[Tool, ToolProvider]]
     ) -> None:
         """Separate concrete tools from providers."""
         for item in raw_tools:
@@ -247,7 +247,7 @@ class BaseAgent(ABC):
 
             # Handle event loop
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
 
                 def run_in_thread():
                     new_loop = asyncio.new_event_loop()

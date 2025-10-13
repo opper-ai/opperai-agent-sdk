@@ -163,7 +163,7 @@ Follow order of operations (PEMDAS): Parentheses, Exponents, Multiplication/Divi
         problem="Calculate (12 * 8) + (45 / 9) - 7",
         show_work=True,
     )
-    result1 = await agent.process(problem1)
+    _result1 = await agent.process(problem1)
 
     print("\n" + "=" * 60)
     print("EXAMPLE 2: Powers and roots")
@@ -172,7 +172,7 @@ Follow order of operations (PEMDAS): Parentheses, Exponents, Multiplication/Divi
         problem="What is the square root of (2^8)?",
         show_work=True,
     )
-    result2 = await agent.process(problem2)
+    _result2 = await agent.process(problem2)
 
     print("\n" + "=" * 60)
     print("EXAMPLE 3: Complex expression")
@@ -181,7 +181,7 @@ Follow order of operations (PEMDAS): Parentheses, Exponents, Multiplication/Divi
         problem="Calculate ((5 + 3) * 4) - (10 / 2)",
         show_work=True,
     )
-    result3 = await agent.process(problem3)
+    _result3 = await agent.process(problem3)
 
 
 if __name__ == "__main__":

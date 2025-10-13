@@ -395,7 +395,7 @@ async def test_provider_setup_timeout():
         "opper_agent.mcp.provider.MCPClient.from_config", return_value=mock_client
     ):
         # Even with timeout, should handle gracefully
-        tools = await provider.setup(None)
+        await provider.setup(None)
 
         # In practice, this test would need proper timeout handling
         # For now, we're just verifying the structure
