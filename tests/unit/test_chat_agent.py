@@ -8,8 +8,8 @@ import pytest
 import tempfile
 import os
 from unittest.mock import AsyncMock
-from opper_agent.agents.chat import ChatAgent, Conversation, Message
-from opper_agent.utils.decorators import tool
+from opper_agents.agents.chat import ChatAgent, Conversation, Message
+from opper_agents.utils.decorators import tool
 
 
 @tool
@@ -370,7 +370,7 @@ def test_message_with_metadata():
 
 def test_chat_agent_inherits_from_agent():
     """Test that ChatAgent properly inherits from Agent."""
-    from opper_agent.core.agent import Agent
+    from opper_agents.core.agent import Agent
 
     agent = ChatAgent(name="Test", tools=[], verbose=False, opper_api_key="test-key")
     assert isinstance(agent, Agent)

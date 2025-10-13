@@ -3,8 +3,8 @@
 import asyncio
 
 # Lets start with importing the Opper Agent SDK
-from opper_agent import Agent, hook, tool, mcp, MCPServerConfig
-from opper_agent.base.context import AgentContext
+from opper_agents import Agent, hook, tool, mcp, MCPServerConfig
+from opper_agents.base.context import AgentContext
 
 # deps
 from pydantic import BaseModel, Field

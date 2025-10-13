@@ -11,7 +11,7 @@ import asyncio
 import os
 from typing import List
 from pydantic import BaseModel, Field
-from opper_agent import Agent, tool
+from opper_agents import Agent, tool
 
 
 class ReportInput(BaseModel):
@@ -39,7 +39,7 @@ def save_report(report: ReportInput) -> str:
     # Create markdown content
     content = f"# {report.title}\n\n"
     content += f"## Summary\n\n{report.summary}\n\n"
-    content += f"## Key Findings\n\n"
+    content += "## Key Findings\n\n"
     for i, finding in enumerate(report.key_findings, 1):
         content += f"{i}. {finding}\n"
     content += f"\n## Detailed Analysis\n\n{report.detailed_analysis}\n"
@@ -159,7 +159,7 @@ Be thorough and ensure all report fields are properly filled with relevant conte
     print("\n" + "-" * 70)
     print("Tool Schema Information")
     print("-" * 70)
-    print(f"\nThe save_report tool exposes this schema to the LLM:")
+    print("\nThe save_report tool exposes this schema to the LLM:")
     print(f"  Tool: {save_report.name}")
     print(f"  Parameters: {save_report.parameters}")
     print("\nThe LLM sees the full Pydantic schema with:")

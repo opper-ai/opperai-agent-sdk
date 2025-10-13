@@ -4,8 +4,7 @@ Unit tests for core schemas.
 Tests the Pydantic models used for agent reasoning and tool execution.
 """
 
-import pytest
-from opper_agent.core.schemas import ToolCall, Thought
+from opper_agents.core.schemas import ToolCall, Thought
 
 
 def test_tool_call_creation():

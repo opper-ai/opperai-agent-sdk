@@ -21,7 +21,7 @@ from typing import List
 # Add src to path for development
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from opper_agent import ReactAgent, tool, hook
+from opper_agents import ReactAgent, tool, hook
 
 
 # --- Schemas ---
@@ -196,7 +196,7 @@ Research systematically, building on previous findings.
     print("\nFinal Research Report:")
     print(f"   Topic: {result.topic}")
     print(f"   Summary: {result.summary}")
-    print(f"   Key Points:")
+    print("   Key Points:")
     for i, point in enumerate(result.key_points, 1):
         print(f"      {i}. {point}")
     print(f"   Sources: {', '.join(result.sources_used)}")

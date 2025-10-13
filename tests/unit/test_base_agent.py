@@ -8,10 +8,10 @@ import pytest
 import asyncio
 import concurrent.futures
 from typing import Any
-from opper_agent.base.agent import BaseAgent
-from opper_agent.base.tool import FunctionTool
-from opper_agent.utils.decorators import tool, hook
-from opper_agent.base.hooks import HookEvents
+from opper_agents.base.agent import BaseAgent
+from opper_agents.base.tool import FunctionTool
+from opper_agents.utils.decorators import tool, hook
+from opper_agents.base.hooks import HookEvents
 
 
 # Concrete implementation for testing

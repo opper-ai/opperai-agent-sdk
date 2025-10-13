@@ -5,8 +5,8 @@ Tests for HookManager, HookEvents, and hook execution.
 """
 
 import pytest
-from opper_agent.base.hooks import HookManager, HookEvents
-from opper_agent.base.context import AgentContext
+from opper_agents.base.hooks import HookManager, HookEvents
+from opper_agents.base.context import AgentContext
 
 
 @pytest.mark.asyncio

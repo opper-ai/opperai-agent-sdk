@@ -4,7 +4,7 @@ Main Agent implementation using 'while tools > 0' loop.
 This module contains the primary Agent class that implements the think-act loop.
 """
 
-from typing import Any, Optional, Dict, List
+from typing import Any, Optional, List
 
 from ..base.agent import BaseAgent
 from ..base.context import AgentContext, ExecutionCycle

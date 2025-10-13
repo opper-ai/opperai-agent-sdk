@@ -4,7 +4,7 @@ Unit tests for context module.
 Tests for Usage, AgentContext, and ExecutionCycle data models.
 """
 
-from opper_agent.base.context import Usage, AgentContext, ExecutionCycle
+from opper_agents.base.context import Usage, AgentContext, ExecutionCycle
 
 
 def test_usage_addition():

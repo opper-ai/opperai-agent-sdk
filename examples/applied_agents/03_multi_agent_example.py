@@ -228,12 +228,12 @@ async def main():
         except Exception as e:
             print(f"❌ Error: {e}")
 
-    print(f"\n🎉 Multi-agent system complete!")
-    print(f"\n💡 Key Benefits:")
-    print(f"   • Clean syntax: agent.as_tool()")
-    print(f"   • Automatic parameter extraction")
-    print(f"   • Proper async handling")
-    print(f"   • Easy multi-agent composition")
+    print("\n🎉 Multi-agent system complete!")
+    print("\n💡 Key Benefits:")
+    print("   • Clean syntax: agent.as_tool()")
+    print("   • Automatic parameter extraction")
+    print("   • Proper async handling")
+    print("   • Easy multi-agent composition")
 
 
 if __name__ == "__main__":

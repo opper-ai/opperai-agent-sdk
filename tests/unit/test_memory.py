@@ -6,7 +6,7 @@ agent state across execution cycles.
 """
 
 import pytest
-from opper_agent.memory.memory import Memory, MemoryEntry
+from opper_agents.memory.memory import Memory
 
 
 @pytest.mark.asyncio

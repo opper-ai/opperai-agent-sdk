@@ -3,11 +3,11 @@ Tests for MCP tool provider.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from opper_agent.mcp.config import MCPServerConfig
-from opper_agent.mcp.provider import MCPToolProvider, mcp
-from opper_agent.mcp.client import MCPTool
-from opper_agent.base.tool import FunctionTool
+from unittest.mock import AsyncMock, patch
+from opper_agents.mcp.config import MCPServerConfig
+from opper_agents.mcp.provider import MCPToolProvider, mcp
+from opper_agents.mcp.client import MCPTool
+from opper_agents.base.tool import FunctionTool
 
 
 def test_mcp_helper_function():

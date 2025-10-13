@@ -15,12 +15,11 @@ NOTE: You'll need to get your own Composio MCP endpoint URL and set it as an env
 """
 
 import asyncio
-import os
 from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 
-from opper_agent import Agent, hook, mcp, MCPServerConfig
-from opper_agent.base.context import AgentContext
+from opper_agents import Agent, hook, mcp, MCPServerConfig
+from opper_agents.base.context import AgentContext
 
 
 class GmailResults(BaseModel):

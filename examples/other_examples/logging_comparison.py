@@ -8,7 +8,7 @@ This example demonstrates the different logging options available:
 """
 
 import asyncio
-from opper_agent import Agent, tool, RichLogger, SimpleLogger
+from opper_agents import Agent, tool, RichLogger
 
 
 @tool

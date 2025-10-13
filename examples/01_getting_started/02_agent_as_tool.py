@@ -11,7 +11,7 @@ We'll create a MathAgent and a ResearchAgent, then show both approaches.
 import asyncio
 import os
 
-from opper_agent import Agent, tool
+from opper_agents import Agent, tool
 
 
 # Create specialized agents

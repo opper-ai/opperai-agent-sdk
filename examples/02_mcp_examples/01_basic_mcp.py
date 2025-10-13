@@ -12,7 +12,7 @@ Prerequisites:
 
 import asyncio
 import os
-from opper_agent import Agent, mcp, MCPServerConfig
+from opper_agents import Agent, mcp, MCPServerConfig
 
 
 async def main():

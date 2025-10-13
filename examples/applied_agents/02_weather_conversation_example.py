@@ -12,8 +12,8 @@ import time
 from typing import Any, List, Optional
 from pydantic import BaseModel, Field
 
-from opper_agent import Agent, tool, hook
-from opper_agent.base.context import AgentContext
+from opper_agents import Agent, tool, hook
+from opper_agents.base.context import AgentContext
 
 
 # --- Input/Output Schemas ---
@@ -75,14 +75,14 @@ def get_current_time(location: str) -> str:
 @hook("agent_start")
 async def on_agent_start(context: AgentContext, agent: Agent):
     """Hook triggered when agent starts execution."""
-    print(f"🤖 Weather Agent started")
+    print("🤖 Weather Agent started")
     print(f"   Input: {context.goal}")
 
 
 @hook("think_end")
 async def on_think_end(context: AgentContext, agent: Agent, thought: Any):
     """Post-thinking hook to analyze the agent's reasoning."""
-    print(f"💭 Agent thinking:")
+    print("💭 Agent thinking:")
     print(f"   Reasoning: {thought.reasoning[:100]}...")
     print(f"   Tool calls planned: {len(thought.tool_calls)}")
     print(f"   User message: {thought.user_message}")
@@ -91,7 +91,7 @@ async def on_think_end(context: AgentContext, agent: Agent, thought: Any):
 @hook("agent_end")
 async def on_agent_end(context: AgentContext, agent: Agent, result: Any):
     """Hook triggered when agent completes execution."""
-    print(f"✅ Agent completed")
+    print("✅ Agent completed")
     print(f"   Iterations: {context.iteration}")
     print(f"   Result type: {type(result).__name__}")
 
@@ -129,7 +129,7 @@ async def main():
         location="New York",
     )
     result1 = await agent.process(conversation1)
-    print(f"\n📤 Final Result 1:")
+    print("\n📤 Final Result 1:")
     print(f"   Role: {result1.role}")
     print(f"   Content: {result1.content}")
 
@@ -139,7 +139,7 @@ async def main():
         messages=[ConversationMessage(role="user", content="Hello! How are you today?")]
     )
     result2 = await agent.process(conversation2)
-    print(f"\n📤 Final Result 2:")
+    print("\n📤 Final Result 2:")
     print(f"   Role: {result2.role}")
     print(f"   Content: {result2.content}")
 
@@ -161,7 +161,7 @@ async def main():
         location="London",
     )
     result3 = await agent.process(conversation3)
-    print(f"\n📤 Final Result 3:")
+    print("\n📤 Final Result 3:")
     print(f"   Role: {result3.role}")
     print(f"   Content: {result3.content}")
 

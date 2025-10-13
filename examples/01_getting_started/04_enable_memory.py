@@ -10,7 +10,7 @@ This example shows:
 """
 
 import asyncio
-from opper_agent import Agent, tool
+from opper_agents import Agent, tool
 
 
 @tool

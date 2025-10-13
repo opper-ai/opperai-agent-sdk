@@ -11,9 +11,8 @@ import pytest
 
 import mcp
 
-from opper_agent.mcp.client import MCPClient, MCPTool
-import opper_agent.mcp.client as client_module
-from opper_agent.mcp.config import MCPServerConfig
+from opper_agents.mcp.client import MCPClient, MCPTool
+from opper_agents.mcp.config import MCPServerConfig
 
 
 class FakeSession:

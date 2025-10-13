@@ -5,10 +5,9 @@ Tests the think-act loop, tool execution, and memory integration.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
-from opper_agent.core.agent import Agent
-from opper_agent.core.schemas import Thought, ToolCall
-from opper_agent.utils.decorators import tool
+from unittest.mock import AsyncMock
+from opper_agents.core.agent import Agent
+from opper_agents.utils.decorators import tool
 
 
 @tool

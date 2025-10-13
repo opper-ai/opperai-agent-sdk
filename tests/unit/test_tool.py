@@ -5,7 +5,7 @@ Tests for Tool, FunctionTool, ToolResult, and tool execution.
 """
 
 import pytest
-from opper_agent.base.tool import FunctionTool, ToolResult
+from opper_agents.base.tool import FunctionTool, ToolResult
 
 
 def sync_add(a: int, b: int) -> int:

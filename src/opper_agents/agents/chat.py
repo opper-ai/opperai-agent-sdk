@@ -30,7 +30,7 @@ Planned Features:
 - Integration with tools and memory
 """
 
-from typing import Any, List, Dict, Optional
+from typing import Any, List, Dict
 from pydantic import BaseModel, Field
 import json
 

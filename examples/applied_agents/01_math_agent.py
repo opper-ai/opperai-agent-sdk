@@ -7,13 +7,12 @@ Shows how to use structured input/output schemas with hooks for monitoring.
 import os
 import sys
 import asyncio
-import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 from pydantic import BaseModel, Field
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from opper_agent_old import Agent, tool, hook, RunContext, Usage
+from opper_agent_old import Agent, tool, hook, RunContext
 
 
 # --- Input/Output Schemas ---
@@ -73,7 +72,7 @@ def calculate_square_root(number: float) -> float:
 # --- Event Hooks ---
 @hook("on_agent_start")
 async def on_agent_start(context: RunContext, agent: Agent):
-    print(f"🧮 Math Agent started")
+    print("🧮 Math Agent started")
     print(f"   Problem: {context.goal}")
 
 

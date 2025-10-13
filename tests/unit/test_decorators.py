@@ -7,8 +7,8 @@ Tests for @tool and @hook decorators.
 import pytest
 from typing import List
 from pydantic import BaseModel, Field
-from opper_agent.utils.decorators import tool, hook
-from opper_agent.base.tool import FunctionTool
+from opper_agents.utils.decorators import tool, hook
+from opper_agents.base.tool import FunctionTool
 
 
 def test_tool_decorator_without_args():

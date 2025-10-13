@@ -4,7 +4,7 @@ Tests for MCP configuration.
 
 import pytest
 from pydantic import ValidationError
-from opper_agent.mcp.config import MCPServerConfig
+from opper_agents.mcp.config import MCPServerConfig
 
 
 def test_stdio_config_valid():

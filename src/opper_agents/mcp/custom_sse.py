@@ -7,7 +7,6 @@ but some MCP servers (like Composio) require POST.
 
 from __future__ import annotations
 
-import asyncio
 from contextlib import asynccontextmanager
 from typing import Any
 

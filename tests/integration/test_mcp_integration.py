@@ -13,10 +13,10 @@ from unittest.mock import AsyncMock, patch
 from types import SimpleNamespace
 from contextlib import asynccontextmanager
 
-from opper_agent.mcp.config import MCPServerConfig
-from opper_agent.mcp.client import MCPClient, MCPTool
-from opper_agent.mcp.provider import MCPToolProvider, mcp
-from opper_agent.base.tool import ToolResult
+from opper_agents.mcp.config import MCPServerConfig
+from opper_agents.mcp.client import MCPClient
+from opper_agents.mcp.provider import mcp
+from opper_agents.base.tool import ToolResult
 
 import mcp as mcp_module
 

@@ -16,11 +16,10 @@ The current hooks available are:
 """
 
 import asyncio
-import os
-from opper_agent import Agent, tool, hook
-from opper_agent.base.context import AgentContext
-from opper_agent.base.agent import BaseAgent
-from opper_agent.base.tool import Tool, ToolResult
+from opper_agents import Agent, tool, hook
+from opper_agents.base.context import AgentContext
+from opper_agents.base.agent import BaseAgent
+from opper_agents.base.tool import Tool, ToolResult
 from pydantic import BaseModel, Field
 
 
@@ -111,7 +110,7 @@ async def on_llm_response(
 @hook("think_end")
 async def on_think_end(context: AgentContext, agent: BaseAgent, thought):
     """Called after the think/reasoning step."""
-    print(f"\nHOOK [on_think_end]: Thought completed")
+    print("\nHOOK [on_think_end]: Thought completed")
     print(f"   Reasoning: {thought.reasoning[:100]}...")
     print(f"   Tool calls planned: {len(thought.tool_calls)}")
 
@@ -171,14 +170,14 @@ async def main():
         result = await agent.process(task_dict)
 
         print("\n" + "=" * 60)
-        print(f"FINAL RESULT:")
+        print("FINAL RESULT:")
         print(f"Answer: {result.answer}")
         print(f"Reasoning: {result.reasoning}")
         print("=" * 60)
 
         # Show execution stats
         if agent.context:
-            print(f"\nExecution Stats:")
+            print("\nExecution Stats:")
             print(f"  - Iterations: {agent.context.iteration}")
             print(
                 f"  - Tool calls: {sum(len(c.tool_calls) for c in agent.context.execution_history)}"

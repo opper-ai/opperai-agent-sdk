@@ -169,7 +169,6 @@ class RichLogger(AgentLogger):
             print(f"\n--- Iteration {iteration}/{max_iterations} ---")
             return
 
-        from rich.panel import Panel
 
         self.console.print()
         self.console.rule(
@@ -183,7 +182,6 @@ class RichLogger(AgentLogger):
             yield
             return
 
-        from rich.status import Status
 
         with self.console.status(
             f"[bold {self.color_savoy_purple}]Thinking...", spinner="dots"

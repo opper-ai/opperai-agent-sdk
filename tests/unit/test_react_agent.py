@@ -5,10 +5,9 @@ Tests the ReAct pattern agent implementation.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
-from opper_agent.agents.react import ReactAgent
-from opper_agent.core.schemas import ReactThought, Action
-from opper_agent.utils.decorators import tool
+from unittest.mock import AsyncMock
+from opper_agents.agents.react import ReactAgent
+from opper_agents.utils.decorators import tool
 
 
 @tool
@@ -293,7 +292,7 @@ async def test_react_agent_as_tool(mock_opper_client):
 
 def test_react_agent_inherits_from_agent():
     """Test that ReactAgent properly inherits from Agent."""
-    from opper_agent.core.agent import Agent
+    from opper_agents.core.agent import Agent
 
     agent = ReactAgent(
         name="Test", tools=[add], verbose=False, opper_api_key="test-key"

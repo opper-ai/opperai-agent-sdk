@@ -5,8 +5,8 @@ Tests for the agent logging system.
 import pytest
 from io import StringIO
 import sys
-from opper_agent.utils.logging import AgentLogger, SimpleLogger, RichLogger
-from opper_agent import Agent, tool
+from opper_agents.utils.logging import SimpleLogger, RichLogger
+from opper_agents import Agent, tool
 
 
 def test_simple_logger_basic():

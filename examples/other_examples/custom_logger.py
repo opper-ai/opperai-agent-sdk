@@ -13,7 +13,7 @@ import asyncio
 from datetime import datetime
 from contextlib import contextmanager
 from typing import Any, Optional, Dict, List
-from opper_agent import Agent, tool, AgentLogger
+from opper_agents import Agent, tool, AgentLogger
 
 
 class FileLogger(AgentLogger):
@@ -196,7 +196,7 @@ async def main():
 
     result = await agent_metrics.process("Calculate 10 + 20, then multiply by 3")
     print(f"Result: {result}")
-    print(f"\nCollected metrics:")
+    print("\nCollected metrics:")
     for key, value in metrics_logger.get_metrics().items():
         print(f"  {key}: {value}")
 

@@ -3,11 +3,11 @@ Tests for custom SSE client with POST support.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from contextlib import asynccontextmanager
 from httpx_sse import ServerSentEvent
 
-from opper_agent.mcp.custom_sse import sse_client_post
+from opper_agents.mcp.custom_sse import sse_client_post
 
 
 @pytest.fixture

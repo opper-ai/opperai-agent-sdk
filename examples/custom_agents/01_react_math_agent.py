@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 # Add src to path for development
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from opper_agent import ReactAgent, tool, hook
+from opper_agents import ReactAgent, tool, hook
 
 
 # --- Input/Output Schemas ---

@@ -13,9 +13,9 @@ import os
 import asyncio
 import concurrent.futures
 
-from .context import AgentContext, Usage
+from .context import AgentContext
 from .tool import Tool, FunctionTool
-from .hooks import HookManager, HookEvents
+from .hooks import HookManager
 from ..utils.logging import AgentLogger, SimpleLogger
 
 

@@ -4,12 +4,11 @@ ReAct Agent implementation.
 This module implements the ReAct (Reasoning + Acting) pattern agent.
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
 from ..core.agent import Agent
-from ..core.schemas import ReactThought, Action, ToolCall
+from ..core.schemas import ReactThought, ToolCall
 from ..base.context import ExecutionCycle
-from ..base.tool import ToolResult
 from ..base.hooks import HookEvents
 
 

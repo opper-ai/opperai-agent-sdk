@@ -6,8 +6,7 @@ Run this with: uv run python examples/quick_test.py
 
 import asyncio
 import os
-from opper_agent import Agent, tool
-from opper_agent.utils.logging import RichLogger
+from opper_agents import Agent, tool
 
 
 @tool
@@ -62,7 +61,7 @@ async def main():
 
         # Show execution stats
         if agent.context:
-            print(f"\nExecution Stats:")
+            print("\nExecution Stats:")
             print(f"  - Iterations: {agent.context.iteration}")
             print(
                 f"  - Tool calls: {sum(len(c.tool_calls) for c in agent.context.execution_history)}"

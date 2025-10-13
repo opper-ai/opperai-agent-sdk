@@ -17,12 +17,11 @@ Key differences:
 import os
 import sys
 import asyncio
-from pydantic import BaseModel, Field
 
 # Add src to path for development
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from opper_agent import ChatAgent, tool, hook
+from opper_agents import ChatAgent, tool, hook
 
 
 # --- Helper Tools ---
@@ -158,7 +157,7 @@ When users ask about:
 
         elif user_input.lower() == "summary":
             summary = agent.get_conversation_summary()
-            print(f"\n📊 Conversation Summary:")
+            print("\n📊 Conversation Summary:")
             print(f"   Total messages: {summary['total_messages']}")
             print(f"   Your messages: {summary['user_messages']}")
             print(f"   Assistant messages: {summary['assistant_messages']}")
@@ -219,7 +218,7 @@ async def programmatic_chat():
     # Show conversation summary
     print("-" * 60)
     summary = agent.get_conversation_summary()
-    print(f"\nConversation Summary:")
+    print("\nConversation Summary:")
     print(f"  Total turns: {summary['total_messages'] // 2}")
     print(f"  Messages: {summary['total_messages']}")
 

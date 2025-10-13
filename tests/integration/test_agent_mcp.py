@@ -13,10 +13,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from types import SimpleNamespace
 from contextlib import asynccontextmanager
 
-from opper_agent import Agent, tool
-from opper_agent.mcp.config import MCPServerConfig
-from opper_agent.mcp.provider import mcp
-from opper_agent.base.context import AgentContext
+from opper_agents import Agent, tool
+from opper_agents.mcp.config import MCPServerConfig
+from opper_agents.mcp.provider import mcp
 
 import mcp as mcp_module
 

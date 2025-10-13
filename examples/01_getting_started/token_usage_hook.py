@@ -3,11 +3,10 @@ Quick example of using hooks to check token consumption.
 """
 
 import asyncio
-import os
-from opper_agent import Agent, tool, hook
-from opper_agent.base.context import AgentContext
-from opper_agent.base.agent import BaseAgent
-from opper_agent.base.tool import Tool, ToolResult
+from opper_agents import Agent, tool, hook
+from opper_agents.base.context import AgentContext
+from opper_agents.base.agent import BaseAgent
+from opper_agents.base.tool import Tool, ToolResult
 from pydantic import BaseModel, Field
 
 
@@ -43,7 +42,7 @@ def get_user_input(query: str) -> str:
 async def on_loop_start(context: AgentContext, agent: BaseAgent):
     """Called at the start of each iteration loop - shows usage so far."""
     print(f"\nLoop iteration {context.iteration + 1} starting")
-    print(f"  Token usage so far:")
+    print("  Token usage so far:")
     print(f"    - LLM requests: {context.usage.requests}")
     print(f"    - Input tokens:  {context.usage.input_tokens}")
     print(f"    - Output tokens: {context.usage.output_tokens}")
@@ -54,7 +53,7 @@ async def on_loop_start(context: AgentContext, agent: BaseAgent):
 async def on_loop_end(context: AgentContext, agent: BaseAgent):
     """Called at the end of each iteration loop - shows updated usage."""
     print(f"\nLoop iteration {context.iteration} completed")
-    print(f"  Token usage after this loop:")
+    print("  Token usage after this loop:")
     print(f"    - LLM requests: {context.usage.requests}")
     print(f"    - Input tokens:  {context.usage.input_tokens}")
     print(f"    - Output tokens: {context.usage.output_tokens}")
@@ -110,21 +109,21 @@ async def main():
         result = await agent.process(task_dict)
 
         print("\n" + "=" * 60)
-        print(f"FINAL RESULT:")
+        print("FINAL RESULT:")
         print(f"Answer: {result.answer}")
         print(f"Reasoning: {result.reasoning}")
         print("=" * 60)
 
         # Show execution stats
         if agent.context:
-            print(f"\nExecution Stats:")
+            print("\nExecution Stats:")
             print(f"  - Iterations: {agent.context.iteration}")
             print(
                 f"  - Tool calls: {sum(len(c.tool_calls) for c in agent.context.execution_history)}"
             )
             print(f"  - Parent span ID: {agent.context.parent_span_id}")
             print(f"  - Session ID: {agent.context.session_id}")
-            print(f"\n  Token Usage:")
+            print("\n  Token Usage:")
             print(f"    - LLM requests: {agent.context.usage.requests}")
             print(f"    - Input tokens:  {agent.context.usage.input_tokens}")
             print(f"    - Output tokens: {agent.context.usage.output_tokens}")
