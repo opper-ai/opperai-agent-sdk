@@ -59,7 +59,20 @@ result = await agent.process("What's the weather in Paris?")
 
 - Python >= 3.11
 
-### Install from Source
+### Install from PyPI
+
+```bash
+pip install opper-agents
+```
+
+Or using UV:
+```bash
+uv pip install opper-agents
+```
+
+### Install from Source (For Development)
+
+If you want to contribute or modify the SDK:
 
 1. **Clone the repository:**
 ```bash
@@ -67,15 +80,12 @@ git clone https://github.com/opper-ai/opperai-agent-sdk.git
 cd opperai-agent-sdk
 ```
 
-2. **Install the package:**
-
-**Option 1: Editable Installation (Recommended for Development)**
+2. **Install in editable mode:**
 ```bash
+# Using pip
 pip install -e .
-```
 
-**Option 2: Using UV (Recommended)**
-```bash
+# Or using UV (recommended)
 uv pip install -e .
 ```
 
