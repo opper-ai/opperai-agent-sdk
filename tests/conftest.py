@@ -69,7 +69,7 @@ def mock_opper_client(monkeypatch):
     def mock_opper_init(*args, **kwargs):
         return mock
 
-    monkeypatch.setattr("opper_agent.base.agent.Opper", mock_opper_init)
+    monkeypatch.setattr("opper_agents.base.agent.Opper", mock_opper_init)
     return mock
 
 

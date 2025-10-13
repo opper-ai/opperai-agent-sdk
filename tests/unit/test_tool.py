@@ -67,8 +67,9 @@ def test_parameter_extraction():
     tool = FunctionTool(sync_add)
     assert "a" in tool.parameters
     assert "b" in tool.parameters
-    assert "int" in tool.parameters["a"]
-    assert "int" in tool.parameters["b"]
+    # Parameters are now dicts with 'type' and 'description' keys
+    assert tool.parameters["a"]["type"] == "int"
+    assert tool.parameters["b"]["type"] == "int"
 
 
 def test_parameter_extraction_with_defaults():
@@ -76,7 +77,9 @@ def test_parameter_extraction_with_defaults():
     tool = FunctionTool(tool_with_defaults)
     assert "name" in tool.parameters
     assert "count" in tool.parameters
-    assert "default: 5" in tool.parameters["count"]
+    # Parameters are now dicts with default info in the description
+    assert "default: 5" in tool.parameters["count"]["description"]
+    assert tool.parameters["count"]["type"] == "int"
 
 
 def test_tool_name_extraction():

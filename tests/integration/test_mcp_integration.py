@@ -101,8 +101,8 @@ async def test_full_mcp_lifecycle_stdio(mock_stdio_transport):
     )
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", mock_stdio_transport),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.stdio_client", mock_stdio_transport),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         # Step 1: Connect
         client = MCPClient(config)
@@ -149,8 +149,8 @@ async def test_mcp_provider_full_lifecycle(mock_stdio_transport):
     )
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", mock_stdio_transport),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.stdio_client", mock_stdio_transport),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         # Step 1: Setup provider
         provider = mcp(config)
@@ -210,8 +210,8 @@ async def test_multiple_mcp_servers(mock_stdio_transport):
         return session1 if session_factory.call_count == 1 else session2
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", mock_stdio_transport),
-        patch("opper_agent.mcp.client.mcp.ClientSession", session_factory),
+        patch("opper_agents.mcp.client.stdio_client", mock_stdio_transport),
+        patch("opper_agents.mcp.client.mcp.ClientSession", session_factory),
     ):
         provider = mcp(config1, config2)
         tools = await provider.setup(None)
@@ -260,8 +260,8 @@ async def test_mcp_tool_execution_with_parameters(mock_stdio_transport):
     config = MCPServerConfig(name="test", transport="stdio", command="python")
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", mock_stdio_transport),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.stdio_client", mock_stdio_transport),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         provider = mcp(config)
         tools = await provider.setup(None)
@@ -298,8 +298,8 @@ async def test_mcp_reconnection(mock_stdio_transport):
     config = MCPServerConfig(name="test", transport="stdio", command="python")
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", mock_stdio_transport),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.stdio_client", mock_stdio_transport),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         client = MCPClient(config)
 
@@ -338,8 +338,8 @@ async def test_mcp_tool_result_structure(mock_stdio_transport):
     config = MCPServerConfig(name="test", transport="stdio", command="python")
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", mock_stdio_transport),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.stdio_client", mock_stdio_transport),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         provider = mcp(config)
         tools = await provider.setup(None)
@@ -372,8 +372,8 @@ async def test_mcp_disconnect_with_cancel_scope_shielding(mock_stdio_transport):
     config = MCPServerConfig(name="test", transport="stdio", command="python")
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", mock_stdio_transport),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.stdio_client", mock_stdio_transport),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         client = MCPClient(config)
         await client.connect()

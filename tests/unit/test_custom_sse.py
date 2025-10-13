@@ -41,7 +41,7 @@ def mock_event_source(mock_sse_response):
 @pytest.mark.asyncio
 async def test_sse_client_post_basic_connection(mock_event_source):
     """Test POST SSE client establishes connection."""
-    with patch("opper_agent.mcp.custom_sse.aconnect_sse", mock_event_source):
+    with patch("opper_agents.mcp.custom_sse.aconnect_sse", mock_event_source):
         async with sse_client_post(
             url="https://example.com/sse",
             headers={"Authorization": "Bearer token"},
@@ -54,7 +54,7 @@ async def test_sse_client_post_basic_connection(mock_event_source):
 @pytest.mark.asyncio
 async def test_sse_client_post_reads_events(mock_event_source):
     """Test POST SSE client reads events from server."""
-    with patch("opper_agent.mcp.custom_sse.aconnect_sse", mock_event_source):
+    with patch("opper_agents.mcp.custom_sse.aconnect_sse", mock_event_source):
         async with sse_client_post(
             url="https://example.com/sse",
             timeout=5,
@@ -89,7 +89,7 @@ async def test_sse_client_post_default_headers():
         event_source.aiter_sse = empty_aiter
         yield event_source
 
-    with patch("opper_agent.mcp.custom_sse.aconnect_sse", capture_headers_sse):
+    with patch("opper_agents.mcp.custom_sse.aconnect_sse", capture_headers_sse):
         async with sse_client_post(url="https://example.com/sse", timeout=5):
             pass
 
@@ -116,7 +116,7 @@ async def test_sse_client_post_preserves_custom_headers():
         event_source.aiter_sse = empty_aiter
         yield event_source
 
-    with patch("opper_agent.mcp.custom_sse.aconnect_sse", capture_headers_sse):
+    with patch("opper_agents.mcp.custom_sse.aconnect_sse", capture_headers_sse):
         async with sse_client_post(
             url="https://example.com/sse",
             headers={"Authorization": "Bearer token", "X-Custom": "value"},
@@ -151,7 +151,7 @@ async def test_sse_client_post_uses_post_method():
         event_source.aiter_sse = empty_aiter
         yield event_source
 
-    with patch("opper_agent.mcp.custom_sse.aconnect_sse", capture_method_sse):
+    with patch("opper_agents.mcp.custom_sse.aconnect_sse", capture_method_sse):
         async with sse_client_post(url="https://example.com/sse", timeout=5):
             pass
 
@@ -167,7 +167,7 @@ async def test_sse_client_post_handles_errors():
         raise ConnectionError("Failed to connect")
         yield
 
-    with patch("opper_agent.mcp.custom_sse.aconnect_sse", failing_sse):
+    with patch("opper_agents.mcp.custom_sse.aconnect_sse", failing_sse):
         # Error is wrapped in ExceptionGroup by anyio task group
         with pytest.raises(BaseExceptionGroup) as exc_info:
             async with sse_client_post(url="https://example.com/sse", timeout=5):
@@ -198,7 +198,7 @@ async def test_sse_client_post_handles_none_headers():
         event_source.aiter_sse = empty_aiter
         yield event_source
 
-    with patch("opper_agent.mcp.custom_sse.aconnect_sse", capture_headers_sse):
+    with patch("opper_agents.mcp.custom_sse.aconnect_sse", capture_headers_sse):
         async with sse_client_post(
             url="https://example.com/sse", headers=None, timeout=5
         ):

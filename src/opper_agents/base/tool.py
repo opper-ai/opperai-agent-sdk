@@ -68,7 +68,7 @@ class FunctionTool(Tool):
     Handles both sync and async functions automatically.
     """
 
-    func: Callable = Field(
+    func: Optional[Callable] = Field(
         default=None, description="The wrapped function", exclude=True
     )
 
@@ -159,6 +159,9 @@ class FunctionTool(Tool):
         start_time = time.time()
 
         try:
+            # func is always set in __init__, but satisfy type checker
+            assert self.func is not None, "Function not initialized"
+
             # Extract special parameters (prefixed with _)
             parent_span_id = kwargs.get("_parent_span_id")
 
@@ -190,13 +193,14 @@ class FunctionTool(Tool):
                 filtered_kwargs["_parent_span_id"] = parent_span_id
 
             # Check if function is async
-            if asyncio.iscoroutinefunction(self.func):
-                result = await self.func(**filtered_kwargs)
+            func = self.func  # Capture for lambda/type narrowing
+            if asyncio.iscoroutinefunction(func):
+                result = await func(**filtered_kwargs)
             else:
                 # Run sync function in executor to avoid blocking
                 loop = asyncio.get_running_loop()
                 result = await loop.run_in_executor(
-                    None, lambda: self.func(**filtered_kwargs)
+                    None, lambda: func(**filtered_kwargs)
                 )
 
             execution_time = time.time() - start_time

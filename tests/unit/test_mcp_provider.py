@@ -81,7 +81,7 @@ async def test_provider_setup_single_server():
 
     # Mock MCPClient.from_config
     with patch(
-        "opper_agent.mcp.provider.MCPClient.from_config", return_value=mock_client
+        "opper_agents.mcp.provider.MCPClient.from_config", return_value=mock_client
     ):
         tools = await provider.setup(None)
 
@@ -134,7 +134,7 @@ async def test_provider_setup_multiple_servers():
         return mock_client2
 
     with patch(
-        "opper_agent.mcp.provider.MCPClient.from_config", side_effect=mock_from_config
+        "opper_agents.mcp.provider.MCPClient.from_config", side_effect=mock_from_config
     ):
         tools = await provider.setup(None)
 
@@ -162,7 +162,7 @@ async def test_provider_setup_with_custom_prefix():
     )
 
     with patch(
-        "opper_agent.mcp.provider.MCPClient.from_config", return_value=mock_client
+        "opper_agents.mcp.provider.MCPClient.from_config", return_value=mock_client
     ):
         tools = await provider.setup(None)
 
@@ -194,7 +194,7 @@ async def test_provider_setup_failure_handling():
         return mock_client_bad
 
     with patch(
-        "opper_agent.mcp.provider.MCPClient.from_config", side_effect=mock_from_config
+        "opper_agents.mcp.provider.MCPClient.from_config", side_effect=mock_from_config
     ):
         # Should not raise, should continue with working server
         tools = await provider.setup(None)
@@ -365,7 +365,7 @@ async def test_provider_setup_all_servers_fail():
         return mock_client2
 
     with patch(
-        "opper_agent.mcp.provider.MCPClient.from_config", side_effect=mock_from_config
+        "opper_agents.mcp.provider.MCPClient.from_config", side_effect=mock_from_config
     ):
         # Should not raise, should return empty list
         tools = await provider.setup(None)
@@ -392,7 +392,7 @@ async def test_provider_setup_timeout():
     mock_client.connect = slow_connect
 
     with patch(
-        "opper_agent.mcp.provider.MCPClient.from_config", return_value=mock_client
+        "opper_agents.mcp.provider.MCPClient.from_config", return_value=mock_client
     ):
         # Even with timeout, should handle gracefully
         await provider.setup(None)
@@ -463,7 +463,7 @@ async def test_provider_empty_tool_list():
     mock_client.list_tools = AsyncMock(return_value=[])  # Empty list
 
     with patch(
-        "opper_agent.mcp.provider.MCPClient.from_config", return_value=mock_client
+        "opper_agents.mcp.provider.MCPClient.from_config", return_value=mock_client
     ):
         tools = await provider.setup(None)
 

@@ -113,8 +113,8 @@ async def test_agent_with_single_mcp_server(
     )
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", mock_transports["stdio"]),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.stdio_client", mock_transports["stdio"]),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         agent = Agent(
             name="DocAgent",
@@ -206,8 +206,8 @@ async def test_agent_with_multiple_mcp_servers(
     mock_opper_client.call_async.side_effect = mock_completion_side_effect
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", mock_transports["stdio"]),
-        patch("opper_agent.mcp.client.mcp.ClientSession", session_factory),
+        patch("opper_agents.mcp.client.stdio_client", mock_transports["stdio"]),
+        patch("opper_agents.mcp.client.mcp.ClientSession", session_factory),
     ):
         agent = Agent(
             name="MultiAgent",
@@ -266,8 +266,8 @@ async def test_agent_with_mcp_and_regular_tools(
     )
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", mock_transports["stdio"]),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.stdio_client", mock_transports["stdio"]),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         agent = Agent(
             name="HybridAgent",
@@ -323,10 +323,10 @@ async def test_agent_mcp_teardown(
     )
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", mock_transports["stdio"]),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.stdio_client", mock_transports["stdio"]),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
         patch(
-            "opper_agent.mcp.client.MCPClient.disconnect",
+            "opper_agents.mcp.client.MCPClient.disconnect",
             track_disconnect,
         ),
     ):
@@ -394,8 +394,8 @@ async def test_agent_mcp_tool_error_handling(
     mock_opper_client.call_async.side_effect = mock_completion_side_effect
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", mock_transports["stdio"]),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.stdio_client", mock_transports["stdio"]),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         agent = Agent(
             name="ErrorAgent",
@@ -434,7 +434,7 @@ async def test_agent_mcp_connection_failure(
         )
     )
 
-    with patch("opper_agent.mcp.client.stdio_client", failing_transport):
+    with patch("opper_agents.mcp.client.stdio_client", failing_transport):
         # Agent should start even if MCP connection fails
         agent = Agent(
             name="TestAgent",
@@ -514,8 +514,8 @@ async def test_agent_final_result_generation_with_mcp_cleanup(
     mock_opper_client.call_async.side_effect = mock_completion_side_effect
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", mock_transports["stdio"]),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.stdio_client", mock_transports["stdio"]),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         agent = Agent(
             name="TestAgent",

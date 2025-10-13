@@ -203,10 +203,12 @@ def test_tool_with_mixed_parameters():
     assert isinstance(user_param, dict)
     assert user_param["type"] == "object"
 
-    # Check simple parameter
+    # Check simple parameter - now also a dict with 'type' and 'description'
     assert "debug" in process_user.parameters
-    assert isinstance(process_user.parameters["debug"], str)
-    assert "bool" in process_user.parameters["debug"]
+    debug_param = process_user.parameters["debug"]
+    assert isinstance(debug_param, dict)
+    assert debug_param["type"] == "bool"
+    assert "bool" in debug_param["description"]
 
 
 @pytest.mark.asyncio

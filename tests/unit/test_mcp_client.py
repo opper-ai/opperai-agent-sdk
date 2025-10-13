@@ -76,8 +76,8 @@ async def test_mcp_client_connect_stdio() -> None:
     session = FakeSession()
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", fake_stdio_client),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.stdio_client", fake_stdio_client),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         client = MCPClient(config)
         await client.connect()
@@ -103,8 +103,8 @@ async def test_mcp_client_list_tools_caches_results() -> None:
     session = FakeSession()
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", fake_stdio_client),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.stdio_client", fake_stdio_client),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         client = MCPClient(config)
         await client.connect()
@@ -130,8 +130,8 @@ async def test_mcp_client_call_tool() -> None:
     session = FakeSession()
 
     with (
-        patch("opper_agent.mcp.client.sse_client", fake_sse_client),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.sse_client", fake_sse_client),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         client = MCPClient(config)
         await client.connect()
@@ -173,9 +173,9 @@ async def test_mcp_client_connect_streamable_http() -> None:
 
     with (
         patch(
-            "opper_agent.mcp.client.streamablehttp_client", fake_streamablehttp_client
+            "opper_agents.mcp.client.streamablehttp_client", fake_streamablehttp_client
         ),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         client = MCPClient(config)
         await client.connect()
@@ -201,8 +201,8 @@ async def test_mcp_client_connect_http_sse_get() -> None:
     session = FakeSession()
 
     with (
-        patch("opper_agent.mcp.client.sse_client", fake_sse_client),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.sse_client", fake_sse_client),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         client = MCPClient(config)
         await client.connect()
@@ -224,8 +224,8 @@ async def test_mcp_client_connect_http_sse_post() -> None:
     session = FakeSession()
 
     with (
-        patch("opper_agent.mcp.client.sse_client_post", fake_sse_client),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.sse_client_post", fake_sse_client),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         client = MCPClient(config)
         await client.connect()
@@ -245,8 +245,8 @@ async def test_mcp_client_connect_idempotent() -> None:
     session = FakeSession()
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", fake_stdio_client),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.stdio_client", fake_stdio_client),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         client = MCPClient(config)
         await client.connect()
@@ -268,8 +268,8 @@ async def test_mcp_client_disconnect_idempotent() -> None:
     session = FakeSession()
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", fake_stdio_client),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.stdio_client", fake_stdio_client),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         client = MCPClient(config)
         await client.connect()
@@ -293,7 +293,7 @@ async def test_mcp_client_connect_failure_cleanup() -> None:
         raise RuntimeError("Connection failed")
         yield object(), object()
 
-    with patch("opper_agent.mcp.client.stdio_client", failing_stdio_client):
+    with patch("opper_agents.mcp.client.stdio_client", failing_stdio_client):
         client = MCPClient(config)
         with pytest.raises(RuntimeError, match="Connection failed"):
             await client.connect()
@@ -315,8 +315,8 @@ async def test_mcp_client_tool_cache_cleared_on_disconnect() -> None:
     session = FakeSession()
 
     with (
-        patch("opper_agent.mcp.client.stdio_client", fake_stdio_client),
-        patch("opper_agent.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
+        patch("opper_agents.mcp.client.stdio_client", fake_stdio_client),
+        patch("opper_agents.mcp.client.mcp.ClientSession", lambda *a, **kw: session),
     ):
         client = MCPClient(config)
         await client.connect()
