@@ -17,6 +17,7 @@ from .context import AgentContext
 from .tool import Tool, FunctionTool, ToolProvider
 from .hooks import HookManager
 from ..utils.logging import AgentLogger, SimpleLogger
+from ..utils.version import get_user_agent
 
 
 class BaseAgent(ABC):
@@ -93,11 +94,17 @@ class BaseAgent(ABC):
         self.tools: List[Tool] = []
         self._initialize_tools(tools or [])
 
-        # Opper client
+        # Opper client with custom User-Agent
         api_key = opper_api_key or os.getenv("OPPER_API_KEY")
         if not api_key:
             raise ValueError("OPPER_API_KEY not found in environment or parameters")
+
+        # Create Opper client
         self.opper = Opper(http_bearer=api_key)
+
+        # Override the User-Agent in the SDK configuration
+        # The Opper SDK ignores client headers and uses its own user_agent from SDKConfiguration
+        self.opper.sdk_configuration.user_agent = get_user_agent()
 
         # Hook system
         self.hook_manager = self._setup_hooks(hooks)
