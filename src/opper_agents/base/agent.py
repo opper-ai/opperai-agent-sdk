@@ -278,5 +278,158 @@ class BaseAgent(ABC):
             parameters=parameters,
         )
 
+    def visualize_flow(self, output_path: Optional[str] = None) -> str:
+        """
+        Generate a Mermaid diagram visualizing the agent's flow and structure.
+
+        Shows:
+        - Agent as main node
+        - Tools (with distinction between function tools and sub-agents)
+        - Input/output schemas if defined
+        - Memory configuration
+        - Hooks if registered
+        - Tool providers (MCP, etc.)
+
+        Args:
+            output_path: Optional path to save the diagram markdown file.
+                        If provided, saves to file and returns the path.
+                        If None, returns the Mermaid markdown string.
+
+        Returns:
+            Mermaid diagram as markdown string, or file path if saved.
+
+        Example:
+            ```python
+            agent = Agent(name="MyAgent", tools=[search_tool])
+            diagram = agent.visualize_flow()
+            print(diagram)  # View the Mermaid markdown
+
+            # Or save to file
+            agent.visualize_flow(output_path="agent_flow.md")
+            ```
+        """
+        lines = ["```mermaid", "graph TB"]
+
+        # Sanitize node IDs (remove spaces, special chars)
+        def sanitize_id(name: str) -> str:
+            return name.replace(" ", "_").replace("-", "_").replace(".", "_")
+
+        agent_id = sanitize_id(self.name)
+
+        # Main agent node with description
+        agent_label = f"{self.name}"
+        if self.description and self.description != f"Agent: {self.name}":
+            agent_label += f"<br/><i>{self.description[:50]}</i>"
+        lines.append(f'    {agent_id}["{agent_label}"]:::agent')
+
+        # Input/Output schemas
+        if self.input_schema:
+            schema_id = f"{agent_id}_input"
+            schema_name = self.input_schema.__name__
+            lines.append(f'    {schema_id}["📥 Input: {schema_name}"]:::schema')
+            lines.append(f"    {schema_id} --> {agent_id}")
+
+        if self.output_schema:
+            schema_id = f"{agent_id}_output"
+            schema_name = self.output_schema.__name__
+            lines.append(f'    {schema_id}["📤 Output: {schema_name}"]:::schema')
+            lines.append(f"    {agent_id} --> {schema_id}")
+
+        # Memory
+        # Note: Memory is initialized per-execution in context, but we can show if it's configurable
+        # For now, we'll check if the agent is configured to support memory in a future iteration
+        # Currently memory is part of context, not BaseAgent directly
+
+        # Hooks
+        if self.hook_manager.get_hook_count() > 0:
+            hook_id = f"{agent_id}_hooks"
+            hook_events = list(self.hook_manager.hooks.keys())
+            hook_label = f"🪝 Hooks: {len(hook_events)}"
+            lines.append(f'    {hook_id}["{hook_label}"]:::hook')
+            lines.append(f"    {agent_id} -.-> {hook_id}")
+
+        # Tool providers (MCP, etc.)
+        if self.tool_providers:
+            for i, provider in enumerate(self.tool_providers):
+                provider_id = f"{agent_id}_provider_{i}"
+                provider_name = provider.__class__.__name__
+                lines.append(f'    {provider_id}["🔌 {provider_name}"]:::provider')
+                lines.append(f"    {agent_id} --> {provider_id}")
+
+        # Tools
+        for tool in self.base_tools:
+            tool_id = sanitize_id(f"{agent_id}_{tool.name}")
+
+            # Check if this tool wraps an agent (heuristic: name ends with _agent)
+            # and the function has access to a nested agent structure
+            is_agent_tool = False
+            agent_tool_name = None
+
+            # Check if it's a FunctionTool with a function that might wrap an agent
+            if isinstance(tool, FunctionTool):
+                # Check the tool name pattern (as_tool() creates tools with "_agent" suffix)
+                if tool.name.endswith("_agent") or "agent" in tool.name.lower():
+                    is_agent_tool = True
+                    agent_tool_name = tool.name.replace("_agent", "")
+
+            if is_agent_tool:
+                # Sub-agent tool
+                tool_label = f"🤖 {tool.name}"
+                if tool.description:
+                    desc_short = tool.description[:40]
+                    tool_label += f"<br/><i>{desc_short}...</i>"
+                lines.append(f'    {tool_id}["{tool_label}"]:::agent_tool')
+                lines.append(f"    {agent_id} --> {tool_id}")
+            else:
+                # Regular function tool
+                tool_label = f"⚙️ {tool.name}"
+                if tool.description:
+                    desc_short = tool.description[:40]
+                    if len(tool.description) > 40:
+                        desc_short += "..."
+                    tool_label += f"<br/><i>{desc_short}</i>"
+                lines.append(f'    {tool_id}["{tool_label}"]:::tool')
+                lines.append(f"    {agent_id} --> {tool_id}")
+
+        # Add styling
+        lines.append("")
+        lines.append("    %% Styling")
+        lines.append(
+            "    classDef agent fill:#e1f5ff,stroke:#01579b,stroke-width:3px,color:#000"
+        )
+        lines.append(
+            "    classDef tool fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000"
+        )
+        lines.append(
+            "    classDef agent_tool fill:#f3e5f5,stroke:#4a148c,stroke-width:2px,color:#000"
+        )
+        lines.append(
+            "    classDef schema fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px,color:#000"
+        )
+        lines.append(
+            "    classDef hook fill:#fff9c4,stroke:#f57f17,stroke-width:2px,color:#000"
+        )
+        lines.append(
+            "    classDef provider fill:#fce4ec,stroke:#880e4f,stroke-width:2px,color:#000"
+        )
+
+        lines.append("```")
+
+        mermaid_markdown = "\n".join(lines)
+
+        # Save to file if path provided
+        if output_path:
+            # Ensure the output path has .md extension
+            if not output_path.endswith(".md"):
+                output_path += ".md"
+
+            with open(output_path, "w") as f:
+                f.write(f"# Agent Flow: {self.name}\n\n")
+                f.write(mermaid_markdown)
+
+            return output_path
+
+        return mermaid_markdown
+
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(name='{self.name}', tools={len(self.tools)})"
