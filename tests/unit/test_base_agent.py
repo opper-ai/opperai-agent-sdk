@@ -478,3 +478,128 @@ async def test_agent_as_tool_receives_kwargs_as_dict(mock_opper_client, monkeypa
     assert "Bob" in result.result
     assert "25" in result.result
     assert "NYC" in result.result
+
+
+def test_visualize_flow_basic(mock_opper_client, monkeypatch):
+    """Test basic visualization without tools."""
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    agent = TestAgent(name="BasicAgent")
+    diagram = agent.visualize_flow()
+
+    assert "```mermaid" in diagram
+    assert "graph TB" in diagram
+    assert "BasicAgent" in diagram
+    assert "```" in diagram
+
+
+def test_visualize_flow_with_tools(mock_opper_client, monkeypatch):
+    """Test visualization with regular tools."""
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    agent = TestAgent(name="ToolAgent", tools=[dummy_tool, add_tool])
+    diagram = agent.visualize_flow()
+
+    assert "BasicAgent" in diagram or "ToolAgent" in diagram
+    assert "dummy_tool" in diagram
+    assert "add_tool" in diagram
+    assert "⚙️" in diagram or "tool" in diagram.lower()
+
+
+def test_visualize_flow_with_agent_tool(mock_opper_client, monkeypatch):
+    """Test visualization with agent-as-tool."""
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    sub_agent = TestAgent(name="SubAgent")
+    main_agent = TestAgent(name="MainAgent", tools=[sub_agent.as_tool()])
+
+    diagram = main_agent.visualize_flow()
+
+    assert "MainAgent" in diagram
+    assert "agent" in diagram.lower()
+    # Should detect agent tool pattern
+    assert "SubAgent" in diagram or "_agent" in diagram
+
+
+def test_visualize_flow_with_schemas(mock_opper_client, monkeypatch):
+    """Test visualization with input/output schemas."""
+    from pydantic import BaseModel
+
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    class InputSchema(BaseModel):
+        query: str
+
+    class OutputSchema(BaseModel):
+        result: str
+
+    agent = TestAgent(
+        name="SchemaAgent",
+        input_schema=InputSchema,
+        output_schema=OutputSchema,
+    )
+    diagram = agent.visualize_flow()
+
+    assert "InputSchema" in diagram
+    assert "OutputSchema" in diagram
+    assert "📥" in diagram or "Input" in diagram
+    assert "📤" in diagram or "Output" in diagram
+
+
+def test_visualize_flow_with_hooks(mock_opper_client, monkeypatch):
+    """Test visualization with hooks."""
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    @hook("agent_start")
+    async def on_start(context):
+        pass
+
+    agent = TestAgent(name="HookAgent", hooks=[on_start])
+    diagram = agent.visualize_flow()
+
+    assert "HookAgent" in diagram
+    assert "Hook" in diagram or "🪝" in diagram
+
+
+def test_visualize_flow_save_to_file(mock_opper_client, monkeypatch, tmp_path):
+    """Test saving visualization to file."""
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    agent = TestAgent(name="FileAgent")
+    output_path = tmp_path / "agent_flow.md"
+
+    returned_path = agent.visualize_flow(output_path=str(output_path))
+
+    assert returned_path == str(output_path)
+    assert output_path.exists()
+
+    content = output_path.read_text()
+    assert "# Agent Flow: FileAgent" in content
+    assert "```mermaid" in content
+    assert "FileAgent" in content
+
+
+def test_visualize_flow_auto_add_md_extension(mock_opper_client, monkeypatch, tmp_path):
+    """Test that .md extension is automatically added if missing."""
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    agent = TestAgent(name="ExtAgent")
+    output_path = tmp_path / "agent_flow"  # No .md extension
+
+    returned_path = agent.visualize_flow(output_path=str(output_path))
+
+    assert returned_path.endswith(".md")
+    assert (tmp_path / "agent_flow.md").exists()
+
+
+def test_visualize_flow_sanitizes_node_ids(mock_opper_client, monkeypatch):
+    """Test that node IDs are properly sanitized."""
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    agent = TestAgent(name="My-Agent.Name With Spaces")
+    diagram = agent.visualize_flow()
+
+    # Should work without syntax errors
+    assert "```mermaid" in diagram
+    # Spaces and special chars should be handled
+    assert "My" in diagram

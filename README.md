@@ -1,4 +1,4 @@
-# Opper Agent SDK
+# <img src="assets/opper-logo.png" alt="Opper Logo" width="32" align="center"/> Opper Agent SDK
 
 A Python SDK for building AI agents with [Opper Task Completion API](https://opper.ai). Create intelligent agents that use tools-based reasoning loops with dynamic tool selection, event tracking, and MCP integration.
 
@@ -14,9 +14,10 @@ A Python SDK for building AI agents with [Opper Task Completion API](https://opp
 5. [Agent as a Tool](#5-agent-as-a-tool)
 6. [MCP (Model Context Protocol) Integration](#6-mcp-model-context-protocol-integration)
 7. [Hooks](#7-hooks)
-8. [Monitoring and Tracing](#8-monitoring-and-tracing)
-9. [License](#9-license)
-10. [Support](#10-support)
+8. [Visualizing Agent Flow](#8-visualizing-agent-flow)
+9. [Monitoring and Tracing](#9-monitoring-and-tracing)
+10. [License](#10-license)
+11. [Support](#11-support)
 
 ## 1. Features
 
@@ -195,7 +196,17 @@ agent = Agent(
 
 See `examples/01_getting_started/05_hooks.py` for all available hooks with detailed examples.
 
-## 8. Monitoring and Tracing
+## 8. Visualizing Agent Flow
+
+Generate Mermaid diagrams of your agent's structure showing tools, sub-agents, schemas, and hooks. Perfect for documentation and understanding complex multi-agent systems.
+
+```python
+agent.visualize_flow(output_path="agent_flow.md")
+```
+
+![Agent Flow Diagram](assets/image.png)
+
+## 9. Monitoring and Tracing
 
 The agent provides comprehensive observability for production deployments:
 
@@ -207,11 +218,11 @@ The agent provides comprehensive observability for production deployments:
 
 View your traces in the [Opper Dashboard](https://platform.opper.ai)
 
-## 9. License
+## 10. License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 10. Support
+## 11. Support
 
 - **Documentation**: [Opper Documentation](https://docs.opper.ai)
 - **Issues**: [GitHub Issues](https://github.com/opper-ai/opperai-agent-sdk/issues)

@@ -271,12 +271,258 @@ class BaseAgent(ABC):
             except RuntimeError:
                 return asyncio.run(call_agent())
 
-        return FunctionTool(
+        tool = FunctionTool(
             func=agent_tool,
             name=tool_name,
             description=description,
             parameters=parameters,
         )
+
+        # Store reference to wrapped agent for visualization
+        object.__setattr__(tool, "wrapped_agent", self)
+
+        return tool
+
+    def visualize_flow(
+        self,
+        output_path: Optional[str] = None,
+        _visited: Optional[set] = None,
+        include_mcp_tools: bool = False,
+    ) -> str:
+        """
+        Generate a Mermaid diagram visualizing the agent's flow and structure.
+
+        Shows:
+        - Agent as main node
+        - Tools (with distinction between function tools and sub-agents)
+        - Sub-agent structures recursively
+        - Input/output schemas if defined
+        - Hooks if registered
+        - Tool providers (MCP, etc.)
+
+        Args:
+            output_path: Optional path to save the diagram markdown file.
+                        If provided, saves to file and returns the path.
+                        If None, returns the Mermaid markdown string.
+            _visited: Internal parameter to track visited agents (prevents cycles)
+            include_mcp_tools: If True, temporarily activate MCP providers to show
+                             actual tools. Warning: This connects to MCP servers!
+                             Default: False (shows provider nodes only)
+
+        Returns:
+            Mermaid diagram as markdown string, or file path if saved.
+
+        Example:
+            ```python
+            agent = Agent(name="MyAgent", tools=[search_tool])
+            diagram = agent.visualize_flow()
+            print(diagram)  # View the Mermaid markdown
+
+            # Or save to file
+            agent.visualize_flow(output_path="agent_flow.md")
+
+            # Include MCP tools (connects to MCP servers)
+            agent.visualize_flow(include_mcp_tools=True)
+            ```
+        """
+        if _visited is None:
+            _visited = set()
+
+        lines = []
+        is_root = len(_visited) == 0
+        activated_providers = False
+
+        # Optionally activate MCP providers to show actual tools
+        if is_root and include_mcp_tools and self.tool_providers:
+            try:
+                import asyncio
+
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Can't activate in running loop, skip
+                    pass
+                else:
+                    asyncio.run(self._activate_tool_providers())
+                    activated_providers = True
+            except Exception:
+                # If activation fails, just show providers
+                pass
+
+        if is_root:
+            lines.extend(["```mermaid", "graph TB"])
+
+        # Sanitize functions
+        def sanitize_id(name: str) -> str:
+            """Sanitize node IDs for Mermaid."""
+            return (
+                name.replace(" ", "_")
+                .replace("-", "_")
+                .replace(".", "_")
+                .replace("(", "")
+                .replace(")", "")
+            )
+
+        def sanitize_label(text: str) -> str:
+            """Sanitize labels for Mermaid (remove problematic characters)."""
+            # Remove or replace characters that break Mermaid
+            text = text.replace('"', "'")
+            text = text.replace("\n", " ")
+            text = text.replace("`", "")
+            # Take only first line if multiline
+            text = text.split(".")[0].strip()
+            # Limit length
+            if len(text) > 45:
+                text = text[:42] + "..."
+            return text
+
+        agent_id = sanitize_id(self.name)
+
+        # Avoid cycles
+        if agent_id in _visited:
+            return ""
+        _visited.add(agent_id)
+
+        # Main agent node with description and schemas
+        agent_label = f"🤖 {self.name}"
+        if self.description and self.description != f"Agent: {self.name}":
+            desc = sanitize_label(self.description)
+            agent_label += f"<br/><i>{desc}</i>"
+
+        # Add schema info to agent card
+        input_schema_name = self.input_schema.__name__ if self.input_schema else "N/A"
+        output_schema_name = (
+            self.output_schema.__name__ if self.output_schema else "N/A"
+        )
+        agent_label += f"<br/>In: {input_schema_name} | Out: {output_schema_name}"
+
+        lines.append(f'    {agent_id}["{agent_label}"]:::agent')
+
+        # Hooks
+        if self.hook_manager.get_hook_count() > 0:
+            hook_id = f"{agent_id}_hooks"
+            hook_events = list(self.hook_manager.hooks.keys())
+            # Show which hooks are registered
+            hook_names = ", ".join(hook_events[:3])  # Show first 3
+            if len(hook_events) > 3:
+                hook_names += f" +{len(hook_events) - 3}"
+            lines.append(f'    {hook_id}["🪝 {hook_names}"]:::hook')
+            lines.append(f"    {agent_id} -.-> {hook_id}")
+
+        # Tool providers (MCP, etc.)
+        # Only show provider nodes if tools haven't been activated
+        if self.tool_providers and not (include_mcp_tools and activated_providers):
+            for i, provider in enumerate(self.tool_providers):
+                provider_id = f"{agent_id}_provider_{i}"
+                provider_name = provider.__class__.__name__
+                lines.append(f'    {provider_id}["🔌 {provider_name}"]:::provider')
+                lines.append(f"    {agent_id} --> {provider_id}")
+
+        # Tools - show all tools if providers were activated, otherwise just base_tools
+        tools_to_show = (
+            self.tools
+            if (include_mcp_tools and activated_providers)
+            else self.base_tools
+        )
+        for tool in tools_to_show:
+            tool_id = sanitize_id(f"{agent_id}_{tool.name}")
+
+            # Check if this tool wraps an agent
+            wrapped_agent = getattr(tool, "wrapped_agent", None)
+
+            if wrapped_agent:
+                # Recursively visualize sub-agent
+                sub_agent_id = sanitize_id(wrapped_agent.name)
+                lines.append(f"    {agent_id} --> {sub_agent_id}")
+
+                # Recursively add sub-agent structure
+                sub_lines = wrapped_agent.visualize_flow(_visited=_visited).split("\n")
+                # Filter out mermaid wrapper lines
+                sub_lines = [
+                    line
+                    for line in sub_lines
+                    if line
+                    and "```mermaid" not in line
+                    and "```" not in line.strip()
+                    and "%% Styling" not in line
+                    and "classDef" not in line
+                ]
+                lines.extend(sub_lines)
+            else:
+                # Regular function tool
+                tool_label = f"⚙️ {sanitize_label(tool.name)}"
+                if tool.description:
+                    desc = sanitize_label(tool.description)
+                    tool_label += f"<br/><i>{desc}</i>"
+
+                # Add parameters info
+                if tool.parameters:
+                    param_list = []
+                    for param_name, param_info in tool.parameters.items():
+                        if isinstance(param_info, dict):
+                            param_type = param_info.get("type", "any")
+                            # Handle nested object types
+                            if param_type == "object":
+                                param_list.append(f"{param_name}")
+                            else:
+                                param_list.append(f"{param_name}: {param_type}")
+                        else:
+                            # Handle string format like "str - description"
+                            param_list.append(param_name)
+
+                    if param_list:
+                        params_str = ", ".join(param_list[:3])  # Show first 3
+                        if len(param_list) > 3:
+                            params_str += "..."
+                        tool_label += f"<br/>({params_str})"
+
+                lines.append(f'    {tool_id}["{tool_label}"]:::tool')
+                lines.append(f"    {agent_id} --> {tool_id}")
+
+        # Add styling (only for root call)
+        if is_root:
+            lines.append("")
+            lines.append("    %% Styling - Opper Brand Colors")
+            lines.append(
+                "    classDef agent fill:#8CF0DC,stroke:#1B2E40,stroke-width:3px,color:#1B2E40"
+            )
+            lines.append(
+                "    classDef tool fill:#FFD7D7,stroke:#3C3CAF,stroke-width:2px,color:#1B2E40"
+            )
+            lines.append(
+                "    classDef schema fill:#F8F8F8,stroke:#3C3CAF,stroke-width:2px,color:#1B2E40"
+            )
+            lines.append(
+                "    classDef hook fill:#FFB186,stroke:#3C3CAF,stroke-width:2px,color:#1B2E40"
+            )
+            lines.append(
+                "    classDef provider fill:#8CECF2,stroke:#1B2E40,stroke-width:2px,color:#1B2E40"
+            )
+            lines.append("```")
+
+        mermaid_markdown = "\n".join(lines)
+
+        # Cleanup: deactivate providers if we activated them
+        if activated_providers:
+            try:
+                import asyncio
+
+                asyncio.run(self._deactivate_tool_providers())
+            except Exception:
+                pass
+
+        # Save to file if path provided (only for root call)
+        if output_path and is_root:
+            # Ensure the output path has .md extension
+            if not output_path.endswith(".md"):
+                output_path += ".md"
+
+            with open(output_path, "w") as f:
+                f.write(f"# Agent Flow: {self.name}\n\n")
+                f.write(mermaid_markdown)
+
+            return output_path
+
+        return mermaid_markdown
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(name='{self.name}', tools={len(self.tools)})"
