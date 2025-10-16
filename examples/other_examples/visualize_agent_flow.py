@@ -7,7 +7,7 @@ Mermaid diagrams showing agent structure, tools, schemas, and relationships.
 
 import os
 from pydantic import BaseModel, Field
-from opper_agents import Agent, tool, hook
+from opper_agents import Agent, tool, hook, mcp, MCPServerConfig
 
 
 # Define some example tools
@@ -121,7 +121,7 @@ def main():
         opper_api_key=os.getenv("OPPER_API_KEY"),
     )
 
-    diagram = research_agent.visualize_flow()
+    diagram = research_agent.visualize_flow(output_path="research_agent_flow.md")
     print(diagram)
     print()
 
@@ -178,6 +178,66 @@ def main():
 
     print("Sub-agent diagrams also saved!")
     print()
+
+    # Example 5: Agent with MCP Tools
+    print("=" * 70)
+    print("Example 5: Agent with MCP Tool Provider")
+    print("=" * 70)
+
+    # Create a mock MCP server config (won't actually connect, just for visualization)
+    # In a real scenario, this would connect to an actual MCP server
+    filesystem_mcp = MCPServerConfig(
+        name="filesystem",
+        transport="stdio",
+        command="docker",
+        args=[
+            "run",
+            "-i",
+            "--rm",
+            "-v",
+            f"{os.getcwd()}:/workspace",
+            "node:20",
+            "npx",
+            "-y",
+            "@modelcontextprotocol/server-filesystem",
+            "/workspace",
+        ],
+    )
+
+    # Create agent with MCP provider
+    mcp_agent = Agent(
+        name="MCPAgent",
+        description="Agent with filesystem tools via MCP",
+        instructions="Use filesystem tools to read and write files",
+        tools=[
+            mcp(filesystem_mcp),  # MCP provider
+            calculate,  # Regular tool
+        ],
+        opper_api_key=os.getenv("OPPER_API_KEY"),
+    )
+
+    # Show with provider node only (default)
+    diagram = mcp_agent.visualize_flow(output_path="mcp_agent_flow.md")
+    print(diagram)
+    print()
+
+    # Example 6: MCP Agent with actual tools shown (connects to MCP server)
+    print("=" * 70)
+    print("Example 6: MCP Agent with Actual Tools (connects to server)")
+    print("=" * 70)
+    print("Note: This will try to connect to the MCP server to discover tools.")
+    print("If connection fails, it will fall back to showing the provider node.")
+    print()
+
+    diagram_with_tools = mcp_agent.visualize_flow(
+        output_path="mcp_agent_with_tools_flow.md"
+    )
+    print(diagram_with_tools)
+    print()
+
+    print("=" * 70)
+    print("All visualizations complete!")
+    print("=" * 70)
     print("You can view these markdown files in:")
     print("- GitHub")
     print("- VS Code (with Markdown Preview or Mermaid extension)")

@@ -71,6 +71,11 @@ class FunctionTool(Tool):
     func: Optional[Callable] = Field(
         default=None, description="The wrapped function", exclude=True
     )
+    wrapped_agent: Optional[Any] = Field(
+        default=None,
+        description="Reference to wrapped agent if this tool wraps an agent",
+        exclude=True,
+    )
 
     def __init__(
         self,
