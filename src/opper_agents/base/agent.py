@@ -271,22 +271,29 @@ class BaseAgent(ABC):
             except RuntimeError:
                 return asyncio.run(call_agent())
 
-        return FunctionTool(
+        tool = FunctionTool(
             func=agent_tool,
             name=tool_name,
             description=description,
             parameters=parameters,
         )
 
-    def visualize_flow(self, output_path: Optional[str] = None) -> str:
+        # Store reference to wrapped agent for visualization
+        tool._wrapped_agent = self
+
+        return tool
+
+    def visualize_flow(
+        self, output_path: Optional[str] = None, _visited: Optional[set] = None
+    ) -> str:
         """
         Generate a Mermaid diagram visualizing the agent's flow and structure.
 
         Shows:
         - Agent as main node
         - Tools (with distinction between function tools and sub-agents)
+        - Sub-agent structures recursively
         - Input/output schemas if defined
-        - Memory configuration
         - Hooks if registered
         - Tool providers (MCP, etc.)
 
@@ -294,6 +301,7 @@ class BaseAgent(ABC):
             output_path: Optional path to save the diagram markdown file.
                         If provided, saves to file and returns the path.
                         If None, returns the Mermaid markdown string.
+            _visited: Internal parameter to track visited agents (prevents cycles)
 
         Returns:
             Mermaid diagram as markdown string, or file path if saved.
@@ -308,44 +316,75 @@ class BaseAgent(ABC):
             agent.visualize_flow(output_path="agent_flow.md")
             ```
         """
-        lines = ["```mermaid", "graph TB"]
+        if _visited is None:
+            _visited = set()
 
-        # Sanitize node IDs (remove spaces, special chars)
+        lines = []
+        is_root = len(_visited) == 0
+
+        if is_root:
+            lines.extend(["```mermaid", "graph TB"])
+
+        # Sanitize functions
         def sanitize_id(name: str) -> str:
-            return name.replace(" ", "_").replace("-", "_").replace(".", "_")
+            """Sanitize node IDs for Mermaid."""
+            return (
+                name.replace(" ", "_")
+                .replace("-", "_")
+                .replace(".", "_")
+                .replace("(", "")
+                .replace(")", "")
+            )
+
+        def sanitize_label(text: str) -> str:
+            """Sanitize labels for Mermaid (remove problematic characters)."""
+            # Remove or replace characters that break Mermaid
+            text = text.replace('"', "'")
+            text = text.replace("\n", " ")
+            text = text.replace("`", "")
+            # Take only first line if multiline
+            text = text.split(".")[0].strip()
+            # Limit length
+            if len(text) > 45:
+                text = text[:42] + "..."
+            return text
 
         agent_id = sanitize_id(self.name)
 
+        # Avoid cycles
+        if agent_id in _visited:
+            return ""
+        _visited.add(agent_id)
+
         # Main agent node with description
-        agent_label = f"{self.name}"
+        agent_label = f"🤖 {self.name}"
         if self.description and self.description != f"Agent: {self.name}":
-            agent_label += f"<br/><i>{self.description[:50]}</i>"
+            desc = sanitize_label(self.description)
+            agent_label += f"<br/><i>{desc}</i>"
         lines.append(f'    {agent_id}["{agent_label}"]:::agent')
 
         # Input/Output schemas
         if self.input_schema:
             schema_id = f"{agent_id}_input"
             schema_name = self.input_schema.__name__
-            lines.append(f'    {schema_id}["📥 Input: {schema_name}"]:::schema')
+            lines.append(f'    {schema_id}["Input: {schema_name}"]:::schema')
             lines.append(f"    {schema_id} --> {agent_id}")
 
         if self.output_schema:
             schema_id = f"{agent_id}_output"
             schema_name = self.output_schema.__name__
-            lines.append(f'    {schema_id}["📤 Output: {schema_name}"]:::schema')
+            lines.append(f'    {schema_id}["Output: {schema_name}"]:::schema')
             lines.append(f"    {agent_id} --> {schema_id}")
-
-        # Memory
-        # Note: Memory is initialized per-execution in context, but we can show if it's configurable
-        # For now, we'll check if the agent is configured to support memory in a future iteration
-        # Currently memory is part of context, not BaseAgent directly
 
         # Hooks
         if self.hook_manager.get_hook_count() > 0:
             hook_id = f"{agent_id}_hooks"
             hook_events = list(self.hook_manager.hooks.keys())
-            hook_label = f"🪝 Hooks: {len(hook_events)}"
-            lines.append(f'    {hook_id}["{hook_label}"]:::hook')
+            # Show which hooks are registered
+            hook_names = ", ".join(hook_events[:3])  # Show first 3
+            if len(hook_events) > 3:
+                hook_names += f" +{len(hook_events) - 3}"
+            lines.append(f'    {hook_id}["🪝 {hook_names}"]:::hook')
             lines.append(f"    {agent_id} -.-> {hook_id}")
 
         # Tool providers (MCP, etc.)
@@ -353,72 +392,68 @@ class BaseAgent(ABC):
             for i, provider in enumerate(self.tool_providers):
                 provider_id = f"{agent_id}_provider_{i}"
                 provider_name = provider.__class__.__name__
-                lines.append(f'    {provider_id}["🔌 {provider_name}"]:::provider')
+                lines.append(f'    {provider_id}["{provider_name}"]:::provider')
                 lines.append(f"    {agent_id} --> {provider_id}")
 
         # Tools
         for tool in self.base_tools:
             tool_id = sanitize_id(f"{agent_id}_{tool.name}")
 
-            # Check if this tool wraps an agent (heuristic: name ends with _agent)
-            # and the function has access to a nested agent structure
-            is_agent_tool = False
-            agent_tool_name = None
+            # Check if this tool wraps an agent
+            wrapped_agent = getattr(tool, "_wrapped_agent", None)
 
-            # Check if it's a FunctionTool with a function that might wrap an agent
-            if isinstance(tool, FunctionTool):
-                # Check the tool name pattern (as_tool() creates tools with "_agent" suffix)
-                if tool.name.endswith("_agent") or "agent" in tool.name.lower():
-                    is_agent_tool = True
-                    agent_tool_name = tool.name.replace("_agent", "")
+            if wrapped_agent:
+                # Recursively visualize sub-agent
+                sub_agent_id = sanitize_id(wrapped_agent.name)
+                lines.append(f"    {agent_id} --> {sub_agent_id}")
 
-            if is_agent_tool:
-                # Sub-agent tool
-                tool_label = f"🤖 {tool.name}"
-                if tool.description:
-                    desc_short = tool.description[:40]
-                    tool_label += f"<br/><i>{desc_short}...</i>"
-                lines.append(f'    {tool_id}["{tool_label}"]:::agent_tool')
-                lines.append(f"    {agent_id} --> {tool_id}")
+                # Recursively add sub-agent structure
+                sub_lines = wrapped_agent.visualize_flow(_visited=_visited).split("\n")
+                # Filter out mermaid wrapper lines
+                sub_lines = [
+                    line
+                    for line in sub_lines
+                    if line
+                    and "```mermaid" not in line
+                    and "```" not in line.strip()
+                    and "%% Styling" not in line
+                    and "classDef" not in line
+                ]
+                lines.extend(sub_lines)
             else:
                 # Regular function tool
-                tool_label = f"⚙️ {tool.name}"
+                tool_label = f"⚙️ {sanitize_label(tool.name)}"
                 if tool.description:
-                    desc_short = tool.description[:40]
-                    if len(tool.description) > 40:
-                        desc_short += "..."
-                    tool_label += f"<br/><i>{desc_short}</i>"
+                    desc = sanitize_label(tool.description)
+                    tool_label += f"<br/><i>{desc}</i>"
                 lines.append(f'    {tool_id}["{tool_label}"]:::tool')
                 lines.append(f"    {agent_id} --> {tool_id}")
 
-        # Add styling
-        lines.append("")
-        lines.append("    %% Styling")
-        lines.append(
-            "    classDef agent fill:#e1f5ff,stroke:#01579b,stroke-width:3px,color:#000"
-        )
-        lines.append(
-            "    classDef tool fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000"
-        )
-        lines.append(
-            "    classDef agent_tool fill:#f3e5f5,stroke:#4a148c,stroke-width:2px,color:#000"
-        )
-        lines.append(
-            "    classDef schema fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px,color:#000"
-        )
-        lines.append(
-            "    classDef hook fill:#fff9c4,stroke:#f57f17,stroke-width:2px,color:#000"
-        )
-        lines.append(
-            "    classDef provider fill:#fce4ec,stroke:#880e4f,stroke-width:2px,color:#000"
-        )
-
-        lines.append("```")
+        # Add styling (only for root call)
+        if is_root:
+            lines.append("")
+            lines.append("    %% Styling - Opper Brand Colors")
+            lines.append(
+                "    classDef agent fill:#8CF0DC,stroke:#1B2E40,stroke-width:3px,color:#1B2E40"
+            )
+            lines.append(
+                "    classDef tool fill:#FFD7D7,stroke:#3C3CAF,stroke-width:2px,color:#1B2E40"
+            )
+            lines.append(
+                "    classDef schema fill:#F8F8F8,stroke:#3C3CAF,stroke-width:2px,color:#1B2E40"
+            )
+            lines.append(
+                "    classDef hook fill:#FFB186,stroke:#3C3CAF,stroke-width:2px,color:#1B2E40"
+            )
+            lines.append(
+                "    classDef provider fill:#8CECF2,stroke:#1B2E40,stroke-width:2px,color:#1B2E40"
+            )
+            lines.append("```")
 
         mermaid_markdown = "\n".join(lines)
 
-        # Save to file if path provided
-        if output_path:
+        # Save to file if path provided (only for root call)
+        if output_path and is_root:
             # Ensure the output path has .md extension
             if not output_path.endswith(".md"):
                 output_path += ".md"
