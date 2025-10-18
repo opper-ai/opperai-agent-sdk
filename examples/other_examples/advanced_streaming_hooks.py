@@ -27,22 +27,31 @@ class Analysis(BaseModel):
 
 @tool
 def research_topic(topic: str) -> dict:
-    """Research a topic and return key facts."""
-    # Simulated research results
-    facts = {
-        "climate": ["Global temps rising", "Ice caps melting", "Sea levels up"],
-        "ai": [
+    """Research a topic and return key facts.
+
+    This helper performs a simple keyword match so that broader topic
+    descriptions (e.g., "recent developments in AI") still return data.
+    """
+    tl = topic.lower()
+
+    if any(k in tl for k in ["ai", "artificial intelligence", "machine learning"]):
+        facts = [
             "LLMs advancing rapidly",
             "Multimodal models emerging",
             "Agentic AI growing",
-        ],
-        "space": [
+        ]
+    elif any(k in tl for k in ["climate", "global warming", "climate change"]):
+        facts = ["Global temps rising", "Ice caps melting", "Sea levels up"]
+    elif any(k in tl for k in ["space", "astronomy", "mars", "telescope"]):
+        facts = [
             "Mars missions planned",
             "Webb telescope discoveries",
             "Private spaceflight",
-        ],
-    }
-    return {"facts": facts.get(topic.lower(), ["No data available"])}
+        ]
+    else:
+        facts = ["No data available"]
+
+    return {"facts": facts}
 
 
 @tool

@@ -1,10 +1,10 @@
 """
-Simple streaming example - Watch the agent's final output stream in real-time.
+Simple streaming example — watch the agent's final output stream in real-time.
 
 This example demonstrates:
 - Enabling streaming with enable_streaming=True
-- Using STREAM_CHUNK hook to see output as it's generated
-- Clean, readable real-time output
+- Using STREAM_START/STREAM_CHUNK/STREAM_END hooks to show streaming lifecycle
+- Printing streamed content for a specific field (content)
 
 Run: uv run python examples/01_getting_started/07_streaming_output.py
 """
@@ -33,21 +33,93 @@ def get_random_word() -> str:
     return random.choice(words)
 
 
-# Hook to display content as it streams
-@hook(HookEvents.STREAM_CHUNK)
-async def on_chunk(context: AgentContext, chunk_data: dict, **kwargs) -> None:
-    """Print story content as it streams."""
-    json_path = chunk_data.get("json_path", "")
+# Minimal streaming state (for clean run)
+class _MinimalStreamState:
+    def __init__(self) -> None:
+        self.think_started = False
+        self.final_started = False
 
-    # Only show content field streaming (most interesting for stories)
-    if json_path == "content":
-        print(chunk_data.get("delta", ""), end="", flush=True)
+
+_state_min = _MinimalStreamState()
+
+
+# Verbose hooks: labeled lifecycle and chunks
+@hook(HookEvents.STREAM_START)
+async def on_stream_start_verbose(
+    context: AgentContext, call_type: str, **kwargs
+) -> None:
+    """Announce the start of a streaming call (from hook)."""
+    print(f"[hook STREAM_START] call_type={call_type}")
+
+
+@hook(HookEvents.STREAM_CHUNK)
+async def on_chunk_verbose(context: AgentContext, chunk_data: dict, **kwargs) -> None:
+    """Print streaming info and stream content field in-place (from hook)."""
+    call_type = kwargs.get("call_type")
+    json_path = chunk_data.get("json_path", "")
+    delta = chunk_data.get("delta", "")
+
+    # Log hook event with path
+    if json_path != "content":
+        # Non-content fields: print a concise hook line
+        if isinstance(delta, str) and delta.strip():
+            print(f"[hook STREAM_CHUNK] call_type={call_type} path={json_path} delta={delta}")
+        return
+
+    # Content field: stream inline, but skip empty/whitespace-only deltas
+    if isinstance(delta, str) and delta.strip():
+        print(delta, end="", flush=True)
 
 
 @hook(HookEvents.STREAM_END)
-async def on_stream_end(context: AgentContext, **kwargs) -> None:
-    """Add spacing after stream completes."""
-    print("\n")  # Clean line break after streaming content
+async def on_stream_end_verbose(
+    context: AgentContext, call_type: str, **kwargs
+) -> None:
+    """Announce end of streaming and add a clean break (from hook)."""
+    if call_type == "final_result":
+        print()  # newline after streaming content
+    print(f"[hook STREAM_END] call_type={call_type}")
+
+
+# Minimal hooks: content-only streaming without labels
+@hook(HookEvents.STREAM_CHUNK)
+async def on_chunk_minimal(context: AgentContext, chunk_data: dict, **kwargs) -> None:
+    call_type = kwargs.get("call_type")
+    json_path = chunk_data.get("json_path", "")
+    delta = chunk_data.get("delta", "")
+    # Show minimal thinking (reasoning) without labels
+    if (
+        call_type == "think"
+        and json_path == "reasoning"
+        and isinstance(delta, str)
+        and delta.strip()
+    ):
+        if not _state_min.think_started:
+            print("Thinking...")
+            _state_min.think_started = True
+        print(delta, end="", flush=True)
+        return
+    # Show only the final content inline
+    if (
+        call_type == "final_result"
+        and json_path == "content"
+        and isinstance(delta, str)
+        and delta.strip()
+    ):
+        if not _state_min.final_started:
+            print("\nFinal output...")
+            _state_min.final_started = True
+        print(delta, end="", flush=True)
+
+
+@hook(HookEvents.STREAM_END)
+async def on_stream_end_minimal(
+    context: AgentContext, call_type: str, **kwargs
+) -> None:
+    if call_type == "think":
+        print()
+    if call_type == "final_result":
+        print()
 
 
 async def main() -> None:
@@ -61,11 +133,12 @@ async def main() -> None:
 
     print("=" * 60)
     print("Streaming Story Generator")
-    print("=" * 60 + "\n")
+    print("=" * 60)
 
-    # Create agent with streaming enabled
-    agent = Agent(
-        name="StorytellerAgent",
+    # Run 1: Verbose streaming with hook outputs
+    print("Run 1: Verbose streaming with hook outputs")
+    agent_verbose = Agent(
+        name="StorytellerAgentVerbose",
         description="An agent that creates short stories",
         instructions=(
             "Create a creative short story (2-3 paragraphs) using the random word. "
@@ -73,32 +146,64 @@ async def main() -> None:
         ),
         tools=[get_random_word],
         output_schema=Story,
-        enable_streaming=True,  # Enable streaming!
-        hooks=[on_chunk, on_stream_end],
+        enable_streaming=True,
+        hooks=[on_stream_start_verbose, on_chunk_verbose, on_stream_end_verbose],
         max_iterations=3,
         verbose=False,
     )
 
-    # Run the agent
     try:
-        print("Generating story...\n")
+        print("Generating story...")
         print("-" * 60)
-        print()
-
-        result = await agent.process("Write me a story")
-
+        result = await agent_verbose.process("Write me a story")
         print("-" * 60)
-        print(f"\n📖 Title: {result.title}")
-        print(f"💡 Moral: {result.moral}\n")
-
-        # Show stats
-        if agent.context:
-            print(f"Stats: {agent.context.iteration} iterations, {agent.context.usage}")
-
+        print(f"Title: {result.title}")
+        print(f"Moral: {result.moral}")
+        if agent_verbose.context:
+            print(
+                f"Stats: {agent_verbose.context.iteration} iterations, {agent_verbose.context.usage}"
+            )
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"Error: {e}")
         import traceback
+        traceback.print_exc()
 
+    print("\n" + "=" * 60)
+
+    # Run 2: Clean streaming (content only)
+    print("Run 2: Clean streaming (content only)")
+    # Reset minimal streaming state
+    global _state_min
+    _state_min = _MinimalStreamState()
+    agent_minimal = Agent(
+        name="StorytellerAgentClean",
+        description="An agent that creates short stories",
+        instructions=(
+            "Create a creative short story (2-3 paragraphs) using the random word. "
+            "Make it engaging and include a clear moral lesson."
+        ),
+        tools=[get_random_word],
+        output_schema=Story,
+        enable_streaming=True,
+        hooks=[on_chunk_minimal, on_stream_end_minimal],
+        max_iterations=3,
+        verbose=False,
+    )
+
+    try:
+        print("Generating story...")
+        print("-" * 60)
+        result2 = await agent_minimal.process("Write me a story")
+        print("-" * 60)
+        print(f"Title: {result2.title}")
+        print(f"Moral: {result2.moral}")
+        if agent_minimal.context:
+            print(
+                f"Stats: {agent_minimal.context.iteration} iterations, {agent_minimal.context.usage}"
+            )
+    except Exception as e:
+        print(f"Error: {e}")
+        import traceback
         traceback.print_exc()
 
 
