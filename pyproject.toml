@@ -82,7 +82,7 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-source = ["src/opper_agent"]
+source = ["src/opper_agents"]
 omit = [
     "*/tests/*",
     "*/test_*",
