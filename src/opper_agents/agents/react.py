@@ -183,26 +183,30 @@ IMPORTANT:
             call_type="reason",
         )
 
-        # Call Opper
-        response = await self.opper.call_async(
-            name="react_reason",
-            instructions=instructions,
-            input=context,
-            output_schema=ReactThought,  # type: ignore[arg-type]
-            model=self.model,
-            parent_span_id=self.context.parent_span_id,
-        )
+        # Choose streaming or non-streaming path
+        if getattr(self, "enable_streaming", False):
+            thought = await self._reason_streaming(context, instructions)
+        else:
+            # Call Opper (non-streaming)
+            response = await self.opper.call_async(
+                name="react_reason",
+                instructions=instructions,
+                input=context,
+                output_schema=ReactThought,  # type: ignore[arg-type]
+                model=self.model,
+                parent_span_id=self.context.parent_span_id,
+            )
 
-        # Trigger: llm_response
-        await self.hook_manager.trigger(
-            HookEvents.LLM_RESPONSE,
-            self.context,
-            agent=self,
-            call_type="reason",
-            response=response,
-        )
+            # Trigger: llm_response
+            await self.hook_manager.trigger(
+                HookEvents.LLM_RESPONSE,
+                self.context,
+                agent=self,
+                call_type="reason",
+                response=response,
+            )
 
-        thought = ReactThought(**response.json_payload)
+            thought = ReactThought(**response.json_payload)
 
         # Trigger: think_end (for consistency with base Agent)
         await self.hook_manager.trigger(
@@ -213,3 +217,95 @@ IMPORTANT:
         )
 
         return thought
+
+    async def _reason_streaming(self, context: dict, instructions: str) -> ReactThought:
+        """Streaming version of _reason() for ReAct agent."""
+        assert self.context is not None, "Context must be initialized"
+
+        # Trigger: stream_start
+        await self.hook_manager.trigger(
+            HookEvents.STREAM_START,
+            self.context,
+            agent=self,
+            call_type="reason",
+        )
+
+        field_buffers: dict[str, list[str]] = {}
+
+        try:
+            stream_response = await self.opper.stream_async(
+                name="react_reason",
+                instructions=instructions,
+                input=context,
+                output_schema=ReactThought,  # type: ignore[arg-type]
+                model=self.model,
+                parent_span_id=self.context.parent_span_id,
+            )
+
+            async for event in stream_response.result:
+                if not hasattr(event, "data"):
+                    continue
+
+                data = event.data
+                if not hasattr(data, "delta") or data.delta is None:
+                    continue
+
+                json_path = getattr(data, "json_path", "_root")
+                if json_path not in field_buffers:
+                    field_buffers[json_path] = []
+                field_buffers[json_path].append(str(data.delta))
+
+                accumulated = "".join(field_buffers[json_path])
+
+                await self.hook_manager.trigger(
+                    HookEvents.STREAM_CHUNK,
+                    self.context,
+                    agent=self,
+                    call_type="reason",
+                    chunk_data={
+                        "delta": data.delta,
+                        "json_path": json_path,
+                        "chunk_type": getattr(data, "chunk_type", None),
+                    },
+                    accumulated=accumulated,
+                    field_buffers=field_buffers.copy(),
+                )
+
+            await self.hook_manager.trigger(
+                HookEvents.STREAM_END,
+                self.context,
+                agent=self,
+                call_type="reason",
+                field_buffers=field_buffers.copy(),
+            )
+
+            # Reuse Agent helper via duck typing by importing here
+            from ..core.agent import Agent as BaseAgentImpl
+
+            # We can leverage the reconstruction helper on Agent
+            # by temporarily binding self. This is safe since we're in Agent subclass.
+            json_response = BaseAgentImpl._reconstruct_json_from_buffers(
+                self, field_buffers, ReactThought
+            )
+            thought = ReactThought(**json_response)
+
+            await self.hook_manager.trigger(
+                HookEvents.LLM_RESPONSE,
+                self.context,
+                agent=self,
+                call_type="reason",
+                response=stream_response,
+                parsed=thought,
+            )
+
+            return thought
+
+        except Exception as e:
+            await self.hook_manager.trigger(
+                HookEvents.STREAM_ERROR,
+                self.context,
+                agent=self,
+                call_type="reason",
+                error=e,
+            )
+            raise

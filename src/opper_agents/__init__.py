@@ -19,6 +19,7 @@ __version__ = "0.1.0"
 from .core.agent import Agent
 from .utils.decorators import tool, hook
 from .base.context import AgentContext
+from .base.hooks import HookEvents
 from .memory.memory import Memory
 
 # Logging system
@@ -39,6 +40,7 @@ __all__ = [
     "ChatAgent",
     "tool",
     "hook",
+    "HookEvents",
     "AgentContext",
     "Memory",
     "AgentLogger",

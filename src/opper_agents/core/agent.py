@@ -4,7 +4,8 @@ Main Agent implementation using 'while tools > 0' loop.
 This module contains the primary Agent class that implements the think-act loop.
 """
 
-from typing import Any, Optional, List
+from typing import Any, Optional, List, Type
+from pydantic import BaseModel
 
 from ..base.agent import BaseAgent
 from ..base.context import AgentContext, ExecutionCycle
@@ -350,31 +351,35 @@ The memory you write persists across all process() calls on this agent.
             HookEvents.LLM_CALL, self.context, agent=self, call_type="think"
         )
 
-        # Call Opper (use call_async for async)
-        response = await self.opper.call_async(
-            name="think",
-            instructions=instructions,
-            input=context,
-            output_schema=Thought,  # type: ignore[arg-type]
-            model=self.model,
-            parent_span_id=self.context.parent_span_id,
-        )
+        if self.enable_streaming:
+            # STREAMING PATH
+            thought = await self._think_streaming(context, instructions)
+        else:
+            # NON-STREAMING PATH (existing code)
+            response = await self.opper.call_async(
+                name="think",
+                instructions=instructions,
+                input=context,
+                output_schema=Thought,  # type: ignore[arg-type]
+                model=self.model,
+                parent_span_id=self.context.parent_span_id,
+            )
 
-        # Track usage
-        self._track_usage(response)
+            # Track usage
+            self._track_usage(response)
 
-        # Trigger: llm_response
-        await self.hook_manager.trigger(
-            HookEvents.LLM_RESPONSE,
-            self.context,
-            agent=self,
-            call_type="think",
-            response=response,
-        )
+            # Trigger: llm_response
+            await self.hook_manager.trigger(
+                HookEvents.LLM_RESPONSE,
+                self.context,
+                agent=self,
+                call_type="think",
+                response=response,
+            )
 
-        thought = Thought(**response.json_payload)
+            thought = Thought(**response.json_payload)
 
-        # Trigger: think_end
+        # Trigger: think_end (same for both paths)
         await self.hook_manager.trigger(
             HookEvents.THINK_END, self.context, agent=self, thought=thought
         )
@@ -471,22 +476,32 @@ Follow any instructions provided for formatting and style."""
 
         # Shield this from AnyIO cancel scopes that may have been left by MCP stdio cleanup
         with anyio.CancelScope(shield=True):
-            response = await self.opper.call_async(
-                name="generate_final_result",
-                instructions=instructions,
-                input=context,
-                output_schema=self.output_schema,  # type: ignore[arg-type]
-                model=self.model,
-                parent_span_id=self.context.parent_span_id,
-            )
+            if self.enable_streaming:
+                # STREAMING PATH
+                result = await self._generate_final_result_streaming(
+                    context, instructions
+                )
+            else:
+                # NON-STREAMING PATH (existing code)
+                response = await self.opper.call_async(
+                    name="generate_final_result",
+                    instructions=instructions,
+                    input=context,
+                    output_schema=self.output_schema,  # type: ignore[arg-type]
+                    model=self.model,
+                    parent_span_id=self.context.parent_span_id,
+                )
 
-            # Track usage
-            self._track_usage(response)
+                # Track usage
+                self._track_usage(response)
 
-            # Serialize the response
-            if self.output_schema:
-                return self.output_schema(**response.json_payload)
-            return response.message
+                # Serialize the response
+                if self.output_schema:
+                    result = self.output_schema(**response.json_payload)
+                else:
+                    result = response.message
+
+            return result
 
     def _track_usage(self, response: Any) -> None:
         """
@@ -514,3 +529,456 @@ Follow any instructions provided for formatting and style."""
             # Don't break execution if usage tracking fails
             if self.logger:
                 self.logger.log_warning(f"Could not track usage: {e}")
+
+    async def _think_streaming(self, context: dict, instructions: str) -> Thought:
+        """
+        Streaming version of _think().
+
+        Accumulates chunks, emits hooks, then parses final result.
+
+        Args:
+            context: Context dict to send to LLM
+            instructions: Instructions for the LLM
+
+        Returns:
+            Parsed Thought model
+        """
+        # Ensure context is initialized for type checkers
+        assert self.context is not None, "Context must be initialized"
+
+        # Trigger: stream_start
+        await self.hook_manager.trigger(
+            HookEvents.STREAM_START, self.context, agent=self, call_type="think"
+        )
+
+        # Buffer for accumulating response
+        field_buffers: dict[str, list[str]] = {}  # json_path -> [deltas]
+
+        try:
+            # Call Opper streaming API
+            stream_response = await self.opper.stream_async(
+                name="think",
+                instructions=instructions,
+                input=context,
+                output_schema=Thought,  # type: ignore[arg-type]
+                model=self.model,
+                parent_span_id=self.context.parent_span_id,
+            )
+
+            # Consume stream
+            async for event in stream_response.result:
+                if not hasattr(event, "data"):
+                    continue
+
+                data = event.data
+
+                # Skip chunks without delta
+                if not hasattr(data, "delta") or data.delta is None:
+                    continue
+
+                # Accumulate by json_path (for structured) or root (for text)
+                # Handle Unset/None values by defaulting to "_root"
+                json_path = getattr(data, "json_path", None)
+                if json_path is None or not isinstance(json_path, str):
+                    json_path = "_root"
+
+                if json_path not in field_buffers:
+                    field_buffers[json_path] = []
+                field_buffers[json_path].append(str(data.delta))
+
+                # Calculate accumulated text for this field
+                accumulated = "".join(field_buffers[json_path])
+
+                # Trigger: stream_chunk hook
+                await self.hook_manager.trigger(
+                    HookEvents.STREAM_CHUNK,
+                    self.context,
+                    agent=self,
+                    call_type="think",
+                    chunk_data={
+                        "delta": data.delta,
+                        "json_path": json_path,
+                        "chunk_type": getattr(data, "chunk_type", None),
+                    },
+                    accumulated=accumulated,
+                    field_buffers=field_buffers.copy(),
+                )
+
+            # Trigger: stream_end
+            await self.hook_manager.trigger(
+                HookEvents.STREAM_END,
+                self.context,
+                agent=self,
+                call_type="think",
+                field_buffers=field_buffers.copy(),
+            )
+
+            # If no json_path was provided, fall back to putting all text in reasoning
+            if set(field_buffers.keys()) == {"_root"}:
+                thought_text = "".join(field_buffers.get("_root", []))
+                thought = Thought(reasoning=thought_text)
+            else:
+                # Reconstruct full JSON response
+                json_response = self._reconstruct_json_from_buffers(
+                    field_buffers, Thought
+                )
+
+                # Parse with Pydantic (same as non-streaming)
+                thought = Thought(**json_response)
+
+            # Track usage if available
+            if hasattr(stream_response, "usage") and stream_response.usage:
+                self._track_usage(stream_response)
+
+            # Trigger: llm_response (include raw stream response and parsed model)
+            await self.hook_manager.trigger(
+                HookEvents.LLM_RESPONSE,
+                self.context,
+                agent=self,
+                call_type="think",
+                response=stream_response,
+                parsed=thought,
+            )
+
+            return thought
+
+        except Exception as e:
+            # Trigger: stream_error
+            await self.hook_manager.trigger(
+                HookEvents.STREAM_ERROR,
+                self.context,
+                agent=self,
+                call_type="think",
+                error=e,
+            )
+            raise
+
+    def _reconstruct_json_from_buffers(
+        self, field_buffers: dict[str, list[str]], schema: Type[BaseModel]
+    ) -> dict:
+        """
+        Reconstruct JSON object from streaming buffers.
+
+        Takes the accumulated field buffers from streaming and reconstructs
+        a complete JSON dict that can be parsed by Pydantic.
+
+        Args:
+            field_buffers: Dict mapping json_path to list of delta strings
+                          e.g., {"reasoning": ["I", " need", " to"],
+                                 "tool_calls[0].name": ["search", "_web"]}
+            schema: Pydantic model for structure hints
+
+        Returns:
+            Complete JSON dict ready for Pydantic parsing
+            e.g., {"reasoning": "I need to",
+                   "tool_calls": [{"name": "search_web"}]}
+        """
+        result: dict[str, Any] = {}
+
+        # If only root text exists, return it as text
+        if set(field_buffers.keys()) == {"_root"}:
+            return {"text": "".join(field_buffers.get("_root", []))}
+
+        for json_path, deltas in field_buffers.items():
+            if json_path == "_root":
+                # Ignore stray root chunks when structured fields are present
+                continue
+
+            # Reconstruct nested structure from json_path
+            # e.g., "reasoning" -> result["reasoning"]
+            # e.g., "tool_calls[0].name" -> result["tool_calls"][0]["name"]
+            full_value = "".join(deltas)
+            self._set_nested_value(result, json_path, full_value, schema)
+
+        # Normalize any dicts that actually represent indexed arrays
+        normalized = self._normalize_indexed(result)
+
+        # Special repair for Thought.tool_calls to ensure proper list-of-dicts shape
+        try:
+            from .schemas import Thought as ThoughtSchema
+
+            if schema is ThoughtSchema and isinstance(normalized, dict):
+                tc = normalized.get("tool_calls")
+                # Convert dict of indexed items to list
+                if isinstance(tc, dict):
+                    ordered: list[Any] = []
+                    for idx, v in sorted(((int(k), val) for k, val in tc.items()), key=lambda x: x[0]):
+                        # Flatten nested single-item lists
+                        if isinstance(v, list) and v and isinstance(v[0], dict):
+                            v = v[0]
+                        ordered.append(v)
+                    normalized["tool_calls"] = ordered
+                elif isinstance(tc, list):
+                    fixed: list[Any] = []
+                    for v in tc:
+                        if isinstance(v, list) and v and isinstance(v[0], dict):
+                            fixed.append(v[0])
+                        else:
+                            fixed.append(v)
+                    normalized["tool_calls"] = fixed
+        except Exception:
+            # Best-effort; do not break if repair fails
+            pass
+
+        from typing import cast, Dict
+        return cast(Dict[str, Any], normalized)
+
+    def _normalize_indexed(self, obj: Any) -> Any:
+        """Return a deep-normalized version where dicts with integer-like
+        keys are converted into lists in numeric order."""
+        if isinstance(obj, dict):
+            # Normalize children first
+            normalized_items = {k: self._normalize_indexed(v) for k, v in obj.items()}
+            keys = list(normalized_items.keys())
+            if keys and all(
+                isinstance(k, int) or (isinstance(k, str) and str(k).isdigit()) for k in keys
+            ):
+                max_index = max(int(k) for k in keys)
+                new_list: list[Any] = [None] * (max_index + 1)
+                for k, v in normalized_items.items():
+                    new_list[int(k)] = v
+                return new_list
+            return normalized_items
+        if isinstance(obj, list):
+            return [self._normalize_indexed(v) for v in obj]
+        return obj
+
+    def _set_nested_value(
+        self, obj: dict, path: str, value: Any, schema: Type[BaseModel]
+    ) -> None:
+        """
+        Set nested value in dict using dot notation path.
+
+        Handles both object nesting and array indices.
+
+        Examples:
+            path="reasoning", value="Think about it"
+            -> obj["reasoning"] = "Think about it"
+
+            path="tool_calls[0].name", value="search_web"
+            -> obj["tool_calls"][0]["name"] = "search_web"
+
+            path="metadata.score", value="95"
+            -> obj["metadata"]["score"] = 95 (coerced to int)
+
+        Args:
+            obj: Target dict to modify
+            path: Dot notation path with optional array indices
+            value: Value to set (will be type-coerced)
+            schema: Pydantic model for type inference
+        """
+        import re
+
+        # Parse path supporting both bracket and dot index styles
+        # Examples:
+        #   "tool_calls[0].name" -> ["tool_calls", 0, "name"]
+        #   "tool_calls.0.name"  -> ["tool_calls", 0, "name"]
+        parts: list[object] = []
+        for raw in path.split("."):
+            match = re.match(r"(\w+)\[(\d+)\]", raw)
+            if match:
+                parts.append(match.group(1))
+                parts.append(int(match.group(2)))
+            elif raw.isdigit():
+                parts.append(int(raw))
+            else:
+                parts.append(raw)
+
+        # Navigate to parent and create structure as needed
+        current = obj
+        last_list_container: Optional[list] = None
+        last_list_index: Optional[int] = None
+        for i, part in enumerate(parts[:-1]):
+            next_part = parts[i + 1]
+
+            if isinstance(next_part, int):
+                # Next part is an array index
+                if part not in current:
+                    current[part] = []
+                # Ensure array is long enough
+                while len(current[part]) <= next_part:
+                    current[part].append({})
+                last_list_container = current[part]
+                last_list_index = next_part
+                current = current[part][next_part]
+            else:
+                # Next part is an object key
+                if part not in current:
+                    current[part] = {}
+                current = current[part]
+
+        # Set final value with type coercion
+        final_key = parts[-1]
+        coerced = self._coerce_type(value, schema, path)
+        if isinstance(final_key, int):
+            # Path ends with an array index: set the list element directly
+            if last_list_container is None:
+                # Create a new list if somehow missing
+                last_list_container = []
+            while len(last_list_container) <= final_key:
+                last_list_container.append({})
+            last_list_container[final_key] = coerced
+        else:
+            current[final_key] = coerced
+
+    def _coerce_type(self, value: str, schema: Type[BaseModel], json_path: str) -> Any:
+        """
+        Coerce string value to correct type based on Pydantic schema.
+
+        The API sends all deltas as strings during streaming, but the final
+        JSON needs proper types (int, float, bool, etc.) for Pydantic validation.
+
+        This method uses heuristics and schema inspection to determine the
+        correct type for each field.
+
+        Args:
+            value: String value from streaming
+            schema: Pydantic model to inspect for type hints
+            json_path: Path to the field (for schema lookup)
+
+        Returns:
+            Value coerced to appropriate type
+
+        Examples:
+            "true" -> True
+            "false" -> False
+            "123" -> 123
+            "45.67" -> 45.67
+            "hello" -> "hello"
+        """
+        # Simple heuristic for common types
+
+        # Boolean
+        if value.lower() in ("true", "false"):
+            return value.lower() == "true"
+
+        # Number
+        try:
+            if "." in value:
+                return float(value)
+            return int(value)
+        except ValueError:
+            pass
+
+        # TODO: Could inspect Pydantic schema for better type inference
+        # For now, heuristics are good enough for most cases
+
+        return value  # Keep as string
+
+    async def _generate_final_result_streaming(
+        self, context: dict, instructions: str
+    ) -> Any:
+        """
+        Streaming version of _generate_final_result().
+
+        Similar to _think_streaming() but uses self.output_schema
+        instead of Thought schema.
+
+        Args:
+            context: Context dict to send to LLM
+            instructions: Instructions for the LLM
+
+        Returns:
+            Parsed model (if output_schema) or text string
+        """
+        # Ensure context is initialized for type checkers
+        assert self.context is not None, "Context must be initialized"
+
+        # Trigger: stream_start
+        await self.hook_manager.trigger(
+            HookEvents.STREAM_START,
+            self.context,
+            agent=self,
+            call_type="final_result",
+        )
+
+        field_buffers: dict[str, list[str]] = {}
+
+        try:
+            stream_response = await self.opper.stream_async(
+                name="generate_final_result",
+                instructions=instructions,
+                input=context,
+                output_schema=self.output_schema,  # type: ignore[arg-type]
+                model=self.model,
+                parent_span_id=self.context.parent_span_id,
+            )
+
+            async for event in stream_response.result:
+                if not hasattr(event, "data"):
+                    continue
+
+                data = event.data
+
+                if not hasattr(data, "delta") or data.delta is None:
+                    continue
+
+                # Handle Unset/None values by defaulting to "_root"
+                json_path = getattr(data, "json_path", None)
+                if json_path is None or not isinstance(json_path, str):
+                    json_path = "_root"
+
+                if json_path not in field_buffers:
+                    field_buffers[json_path] = []
+                field_buffers[json_path].append(str(data.delta))
+
+                accumulated = "".join(field_buffers[json_path])
+
+                await self.hook_manager.trigger(
+                    HookEvents.STREAM_CHUNK,
+                    self.context,
+                    agent=self,
+                    call_type="final_result",
+                    chunk_data={
+                        "delta": data.delta,
+                        "json_path": json_path,
+                        "chunk_type": getattr(data, "chunk_type", None),
+                    },
+                    accumulated=accumulated,
+                    field_buffers=field_buffers.copy(),
+                )
+
+            await self.hook_manager.trigger(
+                HookEvents.STREAM_END,
+                self.context,
+                agent=self,
+                call_type="final_result",
+                field_buffers=field_buffers.copy(),
+            )
+
+            # Handle case where no output_schema is defined
+            result: Any
+            if self.output_schema:
+                json_response = self._reconstruct_json_from_buffers(
+                    field_buffers, self.output_schema
+                )
+                result = self.output_schema(**json_response)
+            else:
+                # Text mode: just concatenate all deltas
+                result = "".join(
+                    delta for deltas in field_buffers.values() for delta in deltas
+                )
+
+            if hasattr(stream_response, "usage") and stream_response.usage:
+                self._track_usage(stream_response)
+
+            await self.hook_manager.trigger(
+                HookEvents.LLM_RESPONSE,
+                self.context,
+                agent=self,
+                call_type="final_result",
+                response=stream_response,
+                parsed=result,
+            )
+
+            return result
+
+        except Exception as e:
+            await self.hook_manager.trigger(
+                HookEvents.STREAM_ERROR,
+                self.context,
+                agent=self,
+                call_type="final_result",
+                error=e,
+            )
+            raise
