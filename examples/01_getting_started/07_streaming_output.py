@@ -63,7 +63,9 @@ async def on_chunk_verbose(context: AgentContext, chunk_data: dict, **kwargs) ->
     if json_path != "content":
         # Non-content fields: print a concise hook line
         if isinstance(delta, str) and delta.strip():
-            print(f"[hook STREAM_CHUNK] call_type={call_type} path={json_path} delta={delta}")
+            print(
+                f"[hook STREAM_CHUNK] call_type={call_type} path={json_path} delta={delta}"
+            )
         return
 
     # Content field: stream inline, but skip empty/whitespace-only deltas
@@ -166,6 +168,7 @@ async def main() -> None:
     except Exception as e:
         print(f"Error: {e}")
         import traceback
+
         traceback.print_exc()
 
     print("\n" + "=" * 60)
@@ -204,6 +207,7 @@ async def main() -> None:
     except Exception as e:
         print(f"Error: {e}")
         import traceback
+
         traceback.print_exc()
 
 

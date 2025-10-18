@@ -57,7 +57,9 @@ async def test_stream_error_hook_on_exception(mock_opper_client, opper_api_key):
 
 
 @pytest.mark.asyncio
-async def test_llm_response_includes_response_and_parsed(mock_opper_client, opper_api_key):
+async def test_llm_response_includes_response_and_parsed(
+    mock_opper_client, opper_api_key
+):
     # Prepare streams for think and final_result
     async def gen_think():
         # Only reasoning; Thought schema fills defaults
@@ -86,7 +88,9 @@ async def test_llm_response_includes_response_and_parsed(mock_opper_client, oppe
     seen = {"think": None, "final_result": None}
 
     @hook(HookEvents.LLM_RESPONSE)
-    async def on_llm_response(context, agent, call_type, response=None, parsed=None, **kwargs):
+    async def on_llm_response(
+        context, agent, call_type, response=None, parsed=None, **kwargs
+    ):
         # Ensure both response and parsed are provided
         assert response is not None and parsed is not None
         seen[call_type] = (getattr(response, "marker", None), parsed)
@@ -110,4 +114,3 @@ async def test_llm_response_includes_response_and_parsed(mock_opper_client, oppe
     # Final result hook contains our marker and the parsed OutModel
     assert seen["final_result"][0] == "final_resp"
     assert isinstance(seen["final_result"][1], OutModel)
-

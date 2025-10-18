@@ -8,7 +8,7 @@ from typing import Any, Optional, List, Type
 from pydantic import BaseModel
 
 from ..base.agent import BaseAgent
-from ..base.context import AgentContext, ExecutionCycle
+from ..base.context import AgentContext, ExecutionCycle, Usage
 from ..memory.memory import Memory
 from ..base.hooks import HookEvents
 from ..base.tool import ToolResult
@@ -553,6 +553,7 @@ Follow any instructions provided for formatting and style."""
 
         # Buffer for accumulating response
         field_buffers: dict[str, list[str]] = {}  # json_path -> [deltas]
+        stream_span_id: Optional[str] = None
 
         try:
             # Call Opper streaming API
@@ -572,7 +573,15 @@ Follow any instructions provided for formatting and style."""
 
                 data = event.data
 
-                # Skip chunks without delta
+                # Capture span id if provided (usually first chunk)
+                if (
+                    hasattr(data, "span_id")
+                    and getattr(data, "span_id")
+                    and not stream_span_id
+                ):
+                    stream_span_id = getattr(data, "span_id")
+
+                # Skip chunks without delta (but after capturing span id)
                 if not hasattr(data, "delta") or data.delta is None:
                     continue
 
@@ -626,9 +635,40 @@ Follow any instructions provided for formatting and style."""
                 # Parse with Pydantic (same as non-streaming)
                 thought = Thought(**json_response)
 
-            # Track usage if available
-            if hasattr(stream_response, "usage") and stream_response.usage:
+            # Track usage if available directly, otherwise via span lookup
+            if hasattr(stream_response, "usage") and getattr(stream_response, "usage"):
                 self._track_usage(stream_response)
+            elif stream_span_id:
+                try:
+                    # Fetch span -> trace -> span data to get total_tokens
+                    span = await self.opper.spans.get_async(span_id=stream_span_id)
+                    trace_id = getattr(span, "trace_id", None)
+                    if trace_id:
+                        trace = await self.opper.traces.get_async(trace_id=trace_id)
+                        spans = getattr(trace, "spans", None) or []
+                        total_tokens: Optional[int] = None
+                        for s in spans:
+                            if getattr(s, "id", None) == stream_span_id:
+                                data = getattr(s, "data", None)
+                                total_tokens = (
+                                    getattr(data, "total_tokens", None)
+                                    if data
+                                    else None
+                                )
+                                break
+                        if total_tokens is not None:
+                            usage = Usage(
+                                requests=1,
+                                input_tokens=0,
+                                output_tokens=0,
+                                total_tokens=int(total_tokens),
+                            )
+                            self.context.update_usage(usage)
+                except Exception as usage_exc:  # pragma: no cover - defensive
+                    if self.logger:
+                        self.logger.log_warning(
+                            f"Could not fetch streaming usage: {usage_exc}"
+                        )
 
             # Trigger: llm_response (include raw stream response and parsed model)
             await self.hook_manager.trigger(
@@ -702,7 +742,9 @@ Follow any instructions provided for formatting and style."""
                 # Convert dict of indexed items to list
                 if isinstance(tc, dict):
                     ordered: list[Any] = []
-                    for idx, v in sorted(((int(k), val) for k, val in tc.items()), key=lambda x: x[0]):
+                    for idx, v in sorted(
+                        ((int(k), val) for k, val in tc.items()), key=lambda x: x[0]
+                    ):
                         # Flatten nested single-item lists
                         if isinstance(v, list) and v and isinstance(v[0], dict):
                             v = v[0]
@@ -721,6 +763,7 @@ Follow any instructions provided for formatting and style."""
             pass
 
         from typing import cast, Dict
+
         return cast(Dict[str, Any], normalized)
 
     def _normalize_indexed(self, obj: Any) -> Any:
@@ -731,7 +774,8 @@ Follow any instructions provided for formatting and style."""
             normalized_items = {k: self._normalize_indexed(v) for k, v in obj.items()}
             keys = list(normalized_items.keys())
             if keys and all(
-                isinstance(k, int) or (isinstance(k, str) and str(k).isdigit()) for k in keys
+                isinstance(k, int) or (isinstance(k, str) and str(k).isdigit())
+                for k in keys
             ):
                 max_index = max(int(k) for k in keys)
                 new_list: list[Any] = [None] * (max_index + 1)
@@ -787,7 +831,6 @@ Follow any instructions provided for formatting and style."""
         # Navigate to parent and create structure as needed
         current = obj
         last_list_container: Optional[list] = None
-        last_list_index: Optional[int] = None
         for i, part in enumerate(parts[:-1]):
             next_part = parts[i + 1]
 
@@ -799,7 +842,6 @@ Follow any instructions provided for formatting and style."""
                 while len(current[part]) <= next_part:
                     current[part].append({})
                 last_list_container = current[part]
-                last_list_index = next_part
                 current = current[part][next_part]
             else:
                 # Next part is an object key
@@ -893,6 +935,7 @@ Follow any instructions provided for formatting and style."""
         )
 
         field_buffers: dict[str, list[str]] = {}
+        stream_span_id: Optional[str] = None
 
         try:
             stream_response = await self.opper.stream_async(
@@ -909,6 +952,14 @@ Follow any instructions provided for formatting and style."""
                     continue
 
                 data = event.data
+
+                # Capture span id if provided (usually first chunk)
+                if (
+                    hasattr(data, "span_id")
+                    and getattr(data, "span_id")
+                    and not stream_span_id
+                ):
+                    stream_span_id = getattr(data, "span_id")
 
                 if not hasattr(data, "delta") or data.delta is None:
                     continue
@@ -959,8 +1010,38 @@ Follow any instructions provided for formatting and style."""
                     delta for deltas in field_buffers.values() for delta in deltas
                 )
 
-            if hasattr(stream_response, "usage") and stream_response.usage:
+            if hasattr(stream_response, "usage") and getattr(stream_response, "usage"):
                 self._track_usage(stream_response)
+            elif stream_span_id:
+                try:
+                    span = await self.opper.spans.get_async(span_id=stream_span_id)
+                    trace_id = getattr(span, "trace_id", None)
+                    if trace_id:
+                        trace = await self.opper.traces.get_async(trace_id=trace_id)
+                        spans = getattr(trace, "spans", None) or []
+                        total_tokens: Optional[int] = None
+                        for s in spans:
+                            if getattr(s, "id", None) == stream_span_id:
+                                data = getattr(s, "data", None)
+                                total_tokens = (
+                                    getattr(data, "total_tokens", None)
+                                    if data
+                                    else None
+                                )
+                                break
+                        if total_tokens is not None:
+                            usage = Usage(
+                                requests=1,
+                                input_tokens=0,
+                                output_tokens=0,
+                                total_tokens=int(total_tokens),
+                            )
+                            self.context.update_usage(usage)
+                except Exception as usage_exc:  # pragma: no cover - defensive
+                    if self.logger:
+                        self.logger.log_warning(
+                            f"Could not fetch streaming usage: {usage_exc}"
+                        )
 
             await self.hook_manager.trigger(
                 HookEvents.LLM_RESPONSE,

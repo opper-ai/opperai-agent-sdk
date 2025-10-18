@@ -56,7 +56,9 @@ async def test_react_agent_streaming(mock_opper_client, opper_api_key):
     parsed_reason = []
 
     @hook(HookEvents.STREAM_CHUNK)
-    async def on_chunk(context, agent, call_type, chunk_data, accumulated, field_buffers, **kwargs):
+    async def on_chunk(
+        context, agent, call_type, chunk_data, accumulated, field_buffers, **kwargs
+    ):
         if call_type == "reason":
             reason_chunks.append(accumulated)
         if call_type == "final_result":
