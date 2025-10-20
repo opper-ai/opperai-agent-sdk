@@ -202,7 +202,7 @@ async def main() -> None:
         print(f"Moral: {result2.moral}")
         if agent_minimal.context:
             print(
-                f"Stats: {agent_minimal.context.iteration} iterations, {agent_minimal.context.usage}"
+                f"Stats: {agent_minimal.context.iteration} iterations, {agent_minimal.context.usage.total_tokens} total tokens"
             )
     except Exception as e:
         print(f"Error: {e}")
