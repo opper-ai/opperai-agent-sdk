@@ -49,6 +49,7 @@ class BaseAgent(ABC):
         logger: Optional[AgentLogger] = None,
         model: Optional[str] = None,
         opper_api_key: Optional[str] = None,
+        enable_streaming: bool = False,
     ):
         """
         Initialize base agent.
@@ -66,6 +67,7 @@ class BaseAgent(ABC):
             logger: Custom logger instance (defaults to SimpleLogger if verbose=True)
             model: Default model for LLM calls
             opper_api_key: Opper API key (or from env)
+            enable_streaming: Enable streaming responses from LLM calls (default: False)
         """
         # Basic config
         self.name = name
@@ -74,6 +76,7 @@ class BaseAgent(ABC):
         self.max_iterations = max_iterations
         self.verbose = verbose
         self.model = model or "gcp/gemini-flash-latest"
+        self.enable_streaming = enable_streaming
 
         # Logger setup
         if logger is not None:

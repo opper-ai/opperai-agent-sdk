@@ -4,7 +4,7 @@ ReAct Agent implementation.
 This module implements the ReAct (Reasoning + Acting) pattern agent.
 """
 
-from typing import Any
+from typing import Any, Optional
 
 from ..core.agent import Agent
 from ..core.schemas import ReactThought, ToolCall
@@ -183,26 +183,39 @@ IMPORTANT:
             call_type="reason",
         )
 
-        # Call Opper
-        response = await self.opper.call_async(
-            name="react_reason",
-            instructions=instructions,
-            input=context,
-            output_schema=ReactThought,  # type: ignore[arg-type]
-            model=self.model,
-            parent_span_id=self.context.parent_span_id,
-        )
+        # Choose streaming or non-streaming path
+        if getattr(self, "enable_streaming", False):
+            thought = await self._reason_streaming(context, instructions)
+        else:
+            # Call Opper (non-streaming)
+            response = await self.opper.call_async(
+                name="react_reason",
+                instructions=instructions,
+                input=context,
+                output_schema=ReactThought,  # type: ignore[arg-type]
+                model=self.model,
+                parent_span_id=self.context.parent_span_id,
+            )
 
-        # Trigger: llm_response
-        await self.hook_manager.trigger(
-            HookEvents.LLM_RESPONSE,
-            self.context,
-            agent=self,
-            call_type="reason",
-            response=response,
-        )
+            # Track usage (non-streaming)
+            try:
+                # reuse Agent helper
+                from ..core.agent import Agent as AgentImpl
 
-        thought = ReactThought(**response.json_payload)
+                AgentImpl._track_usage(self, response)
+            except Exception:
+                pass
+
+            # Trigger: llm_response
+            await self.hook_manager.trigger(
+                HookEvents.LLM_RESPONSE,
+                self.context,
+                agent=self,
+                call_type="reason",
+                response=response,
+            )
+
+            thought = ReactThought(**response.json_payload)
 
         # Trigger: think_end (for consistency with base Agent)
         await self.hook_manager.trigger(
@@ -213,3 +226,150 @@ IMPORTANT:
         )
 
         return thought
+
+    async def _reason_streaming(self, context: dict, instructions: str) -> ReactThought:
+        """Streaming version of _reason() for ReAct agent."""
+        assert self.context is not None, "Context must be initialized"
+
+        # Trigger: stream_start
+        await self.hook_manager.trigger(
+            HookEvents.STREAM_START,
+            self.context,
+            agent=self,
+            call_type="reason",
+        )
+
+        field_buffers: dict[str, list[str]] = {}
+        stream_span_id: Optional[str] = None
+
+        try:
+            stream_response = await self.opper.stream_async(
+                name="react_reason",
+                instructions=instructions,
+                input=context,
+                output_schema=ReactThought,  # type: ignore[arg-type]
+                model=self.model,
+                parent_span_id=self.context.parent_span_id,
+            )
+
+            async for event in stream_response.result:
+                if not hasattr(event, "data"):
+                    continue
+
+                data = event.data
+                # Capture span id if provided
+                if (
+                    hasattr(data, "span_id")
+                    and getattr(data, "span_id")
+                    and not stream_span_id
+                ):
+                    stream_span_id = getattr(data, "span_id")
+                if not hasattr(data, "delta") or data.delta is None:
+                    continue
+
+                # Handle Unset/None values by defaulting to "_root"
+                json_path = getattr(data, "json_path", None)
+                if json_path is None or not isinstance(json_path, str):
+                    json_path = "_root"
+
+                if json_path not in field_buffers:
+                    field_buffers[json_path] = []
+                field_buffers[json_path].append(str(data.delta))
+
+                accumulated = "".join(field_buffers[json_path])
+
+                await self.hook_manager.trigger(
+                    HookEvents.STREAM_CHUNK,
+                    self.context,
+                    agent=self,
+                    call_type="reason",
+                    chunk_data={
+                        "delta": data.delta,
+                        "json_path": json_path,
+                        "chunk_type": getattr(data, "chunk_type", None),
+                    },
+                    accumulated=accumulated,
+                    field_buffers=field_buffers.copy(),
+                )
+
+            # If no json_path was provided, fall back to creating a basic ReactThought
+            if set(field_buffers.keys()) == {"_root"}:
+                thought_text = "".join(field_buffers.get("_root", []))
+                thought = ReactThought(reasoning=thought_text, is_complete=True)
+            else:
+                # Reconstruct full JSON response using Agent helper
+                from ..core.agent import Agent as BaseAgentImpl
+
+                json_response = BaseAgentImpl._reconstruct_json_from_buffers(
+                    self, field_buffers, ReactThought
+                )
+                thought = ReactThought(**json_response)
+
+            # Track usage for streaming via span lookup if direct usage missing
+            try:
+                if hasattr(stream_response, "usage") and getattr(
+                    stream_response, "usage"
+                ):
+                    from ..core.agent import Agent as AgentImpl
+
+                    AgentImpl._track_usage(self, stream_response)
+                elif stream_span_id:
+                    span = await self.opper.spans.get_async(span_id=stream_span_id)
+                    trace_id = getattr(span, "trace_id", None)
+                    if trace_id:
+                        trace = await self.opper.traces.get_async(trace_id=trace_id)
+                        spans = getattr(trace, "spans", None) or []
+                        total_tokens = None
+                        for s in spans:
+                            if getattr(s, "id", None) == stream_span_id:
+                                data = getattr(s, "data", None)
+                                total_tokens = (
+                                    getattr(data, "total_tokens", None)
+                                    if data
+                                    else None
+                                )
+                                break
+                        if total_tokens is not None:
+                            from ..base.context import Usage as _Usage
+
+                            self.context.update_usage(
+                                _Usage(
+                                    requests=1,
+                                    input_tokens=0,
+                                    output_tokens=0,
+                                    total_tokens=int(total_tokens),
+                                )
+                            )
+            except Exception:
+                pass
+
+            await self.hook_manager.trigger(
+                HookEvents.LLM_RESPONSE,
+                self.context,
+                agent=self,
+                call_type="reason",
+                response=stream_response,
+                parsed=thought,
+            )
+
+            return thought
+
+        except Exception as e:
+            await self.hook_manager.trigger(
+                HookEvents.STREAM_ERROR,
+                self.context,
+                agent=self,
+                call_type="reason",
+                error=e,
+            )
+            raise
+        finally:
+            # Always emit STREAM_END, even if exception occurred
+            # This ensures consumers know the stream lifecycle is complete
+            await self.hook_manager.trigger(
+                HookEvents.STREAM_END,
+                self.context,
+                agent=self,
+                call_type="reason",
+                field_buffers=field_buffers.copy(),
+            )

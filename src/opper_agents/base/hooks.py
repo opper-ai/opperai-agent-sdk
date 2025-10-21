@@ -34,6 +34,12 @@ class HookEvents:
     LLM_RESPONSE = "llm_response"
     THINK_END = "think_end"
 
+    # Streaming events
+    STREAM_START = "stream_start"
+    STREAM_CHUNK = "stream_chunk"
+    STREAM_END = "stream_end"
+    STREAM_ERROR = "stream_error"
+
 
 class HookManager:
     """
