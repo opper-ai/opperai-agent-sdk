@@ -292,14 +292,6 @@ IMPORTANT:
                     field_buffers=field_buffers.copy(),
                 )
 
-            await self.hook_manager.trigger(
-                HookEvents.STREAM_END,
-                self.context,
-                agent=self,
-                call_type="reason",
-                field_buffers=field_buffers.copy(),
-            )
-
             # If no json_path was provided, fall back to creating a basic ReactThought
             if set(field_buffers.keys()) == {"_root"}:
                 thought_text = "".join(field_buffers.get("_root", []))
@@ -371,3 +363,13 @@ IMPORTANT:
                 error=e,
             )
             raise
+        finally:
+            # Always emit STREAM_END, even if exception occurred
+            # This ensures consumers know the stream lifecycle is complete
+            await self.hook_manager.trigger(
+                HookEvents.STREAM_END,
+                self.context,
+                agent=self,
+                call_type="reason",
+                field_buffers=field_buffers.copy(),
+            )

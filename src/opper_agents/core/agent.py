@@ -613,15 +613,6 @@ Follow any instructions provided for formatting and style."""
                     field_buffers=field_buffers.copy(),
                 )
 
-            # Trigger: stream_end
-            await self.hook_manager.trigger(
-                HookEvents.STREAM_END,
-                self.context,
-                agent=self,
-                call_type="think",
-                field_buffers=field_buffers.copy(),
-            )
-
             # If no json_path was provided, fall back to putting all text in reasoning
             if set(field_buffers.keys()) == {"_root"}:
                 thought_text = "".join(field_buffers.get("_root", []))
@@ -692,6 +683,16 @@ Follow any instructions provided for formatting and style."""
                 error=e,
             )
             raise
+        finally:
+            # Always emit STREAM_END, even if exception occurred
+            # This ensures consumers know the stream lifecycle is complete
+            await self.hook_manager.trigger(
+                HookEvents.STREAM_END,
+                self.context,
+                agent=self,
+                call_type="think",
+                field_buffers=field_buffers.copy(),
+            )
 
     def _reconstruct_json_from_buffers(
         self, field_buffers: dict[str, list[str]], schema: Type[BaseModel]
@@ -989,14 +990,6 @@ Follow any instructions provided for formatting and style."""
                     field_buffers=field_buffers.copy(),
                 )
 
-            await self.hook_manager.trigger(
-                HookEvents.STREAM_END,
-                self.context,
-                agent=self,
-                call_type="final_result",
-                field_buffers=field_buffers.copy(),
-            )
-
             # Handle case where no output_schema is defined
             result: Any
             if self.output_schema:
@@ -1063,3 +1056,13 @@ Follow any instructions provided for formatting and style."""
                 error=e,
             )
             raise
+        finally:
+            # Always emit STREAM_END, even if exception occurred
+            # This ensures consumers know the stream lifecycle is complete
+            await self.hook_manager.trigger(
+                HookEvents.STREAM_END,
+                self.context,
+                agent=self,
+                call_type="final_result",
+                field_buffers=field_buffers.copy(),
+            )
