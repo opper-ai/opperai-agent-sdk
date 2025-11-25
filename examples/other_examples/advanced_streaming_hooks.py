@@ -15,6 +15,8 @@ import os
 from opper_agents import Agent, tool, hook, HookEvents
 from opper_agents.base.context import AgentContext
 from pydantic import BaseModel, Field
+from rich.logging import RichHandler
+from opper_agents.utils.logging import RichLogger
 
 
 class Analysis(BaseModel):
@@ -172,6 +174,7 @@ async def main() -> None:
         hooks=[on_stream_start, on_chunk, on_stream_end],
         max_iterations=5,
         verbose=False,
+        # logger=RichLogger(),
     )
 
     # Run analysis
@@ -194,7 +197,7 @@ async def main() -> None:
         # Stats
         if agent.context:
             print(
-                f"\nStats: {agent.context.iteration} iterations, {agent.context.usage}"
+                f"\nStats: {agent.context.iteration} iterations, {agent.context.usage.total_tokens} total tokens"
             )
 
     except Exception as e:
