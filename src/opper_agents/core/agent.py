@@ -119,7 +119,7 @@ class Agent(BaseAgent):
                         output=str(result),
                         start_time=start_time,
                         end_time=end_time,
-                        duration=duration_ms,
+                        meta={"duration_ms": duration_ms},
                     )
 
             return result
@@ -200,7 +200,7 @@ class Agent(BaseAgent):
                         output=str(memory_data),
                         start_time=mem_read_start,
                         end_time=mem_read_end,
-                        duration=mem_read_duration,
+                        meta={"duration_ms": mem_read_duration},
                     )
 
                     self.context.metadata["current_memory"] = memory_data
@@ -245,7 +245,7 @@ class Agent(BaseAgent):
                         output=f"Successfully wrote {len(thought.memory_updates)} keys",
                         start_time=mem_write_start,
                         end_time=mem_write_end,
-                        duration=mem_write_duration,
+                        meta={"duration_ms": mem_write_duration},
                     )
 
                     memory_writes_performed = True
@@ -519,7 +519,7 @@ The memory you write persists across all process() calls on this agent.
             error=result.error if not result.success else None,
             start_time=tool_start_time,
             end_time=tool_end_time,
-            duration=tool_duration_ms,
+            meta={"duration_ms": tool_duration_ms},
         )
 
         # Trigger: tool_result
