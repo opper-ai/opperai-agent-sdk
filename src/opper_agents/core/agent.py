@@ -442,6 +442,12 @@ The memory you write persists across all process() calls on this agent.
                 parent_span_id=self.context.parent_span_id,
             )
 
+            # Rename span to simpler "think" (function name remains detailed for Opper)
+            if hasattr(response, "span_id") and response.span_id:
+                await self.opper.spans.update_async(
+                    span_id=response.span_id, name="think"
+                )
+
             # Track usage
             self._track_usage(response)
 
@@ -767,6 +773,10 @@ Follow any instructions provided for formatting and style."""
                 response=stream_response,
                 parsed=thought,
             )
+
+            # Rename span to simpler "think"
+            if stream_span_id:
+                await self.opper.spans.update_async(span_id=stream_span_id, name="think")
 
             return thought
 
