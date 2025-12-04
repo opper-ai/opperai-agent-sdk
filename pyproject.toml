@@ -40,6 +40,7 @@ dev = [
 
 [project.scripts]
 test = "run_tests:main"
+examples = "scripts.run_examples:find_and_run_examples"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/opper_agents"]
