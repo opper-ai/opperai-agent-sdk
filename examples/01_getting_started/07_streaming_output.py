@@ -61,8 +61,12 @@ async def on_chunk_verbose(context: AgentContext, chunk_data: dict, **kwargs) ->
 
     # Check if this is a content field we want to stream inline
     # With single LLM call pattern, final_result fields come during "think"
-    # with paths like "final_result.content"
-    is_content_field = json_path == "content" or json_path == "final_result.content"
+    # with paths like "final_result.content" or "user_message"
+    is_content_field = (
+        json_path == "content"
+        or json_path == "final_result.content"
+        or json_path == "user_message"
+    )
 
     # Log hook event with path for non-content fields
     if not is_content_field:
@@ -70,6 +74,11 @@ async def on_chunk_verbose(context: AgentContext, chunk_data: dict, **kwargs) ->
             print(
                 f"[hook STREAM_CHUNK] call_type={call_type} path={json_path} delta={delta}"
             )
+        return
+
+    # Handle user_message specifically for verbose mode
+    if json_path == "user_message" and isinstance(delta, str) and delta.strip():
+        print(f"\n[User Message] {delta}", end="", flush=True) # Print user message on a new line
         return
 
     # Content field: stream inline, but skip empty/whitespace-only deltas
@@ -105,6 +114,12 @@ async def on_chunk_minimal(context: AgentContext, chunk_data: dict, **kwargs) ->
             _state_min.think_started = True
         print(delta, end="", flush=True)
         return
+
+    # Show user_message updates minimally
+    if call_type == "think" and json_path == "user_message" and isinstance(delta, str) and delta.strip():
+        print(f"\nStatus: {delta}", end="", flush=True)
+        return
+
     # Show final content inline - with single LLM call pattern, final_result
     # is streamed during "think" with json_path="final_result.content"
     # Also support legacy "final_result" call_type for backward compatibility
