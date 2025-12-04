@@ -12,7 +12,7 @@ from ..base.context import AgentContext, ExecutionCycle, Usage
 from ..memory.memory import Memory
 from ..base.hooks import HookEvents
 from ..base.tool import ToolResult
-from .schemas import Thought, ToolCall
+from .schemas import Thought, ToolCall, create_thought_with_output_schema
 
 
 class Agent(BaseAgent):
@@ -220,6 +220,38 @@ class Agent(BaseAgent):
                     memory_writes_performed = True
 
                 if thought is not None:
+                    # Check for immediate completion with final result (single LLM call pattern)
+                    if thought.is_complete and thought.final_result is not None:
+                        final_result = thought.final_result
+
+                        # If output_schema is specified, validate the final_result
+                        if self.output_schema:
+                            # Already validated by dynamic schema (Pydantic did it during Thought construction)
+                            if isinstance(final_result, self.output_schema):
+                                pass  # Already correct type
+                            elif isinstance(final_result, dict):
+                                try:
+                                    final_result = self.output_schema(**final_result)
+                                except Exception:
+                                    # Validation failed - fall back to _generate_final_result
+                                    break
+                            else:
+                                # final_result is not a dict and not the expected type
+                                # Fall back to _generate_final_result
+                                break
+
+                        # Trigger loop end before returning
+                        await self.hook_manager.trigger(
+                            HookEvents.LOOP_END, self.context, agent=self
+                        )
+
+                        if self.verbose:
+                            print(
+                                f"✓ Task completed in {self.context.iteration + 1} iteration(s)"
+                            )
+
+                        return final_result
+
                     for tool_call in thought.tool_calls:
                         result = await self._execute_tool(tool_call)
                         results.append(result)
@@ -255,6 +287,7 @@ class Agent(BaseAgent):
                     self.logger.log_final_result()
                 break
 
+        # Fallback to old behavior if no final_result was provided (backward compatibility)
         result = await self._generate_final_result(goal)
         return result
 
@@ -317,10 +350,14 @@ YOUR TASK:
 1. Analyze the current situation
 2. Decide if the goal is complete or more actions are needed
 3. If more actions needed: specify tools to call
-4. If goal complete: return empty tool_calls list
+4. If goal complete:
+   - Set is_complete=true
+   - Provide the complete answer/output in final_result
+   - Leave tool_calls empty
 
 IMPORTANT:
-- Return empty tool_calls array when task is COMPLETE
+- When task is COMPLETE, you MUST set is_complete=true AND provide final_result
+- The final_result should be a complete, well-structured answer based on all work done
 - Only use available tools
 - Provide clear reasoning for each decision
 """
@@ -351,16 +388,25 @@ The memory you write persists across all process() calls on this agent.
             HookEvents.LLM_CALL, self.context, agent=self, call_type="think"
         )
 
+        # Create dynamic Thought schema with typed final_result if output_schema is specified
+        thought_schema = create_thought_with_output_schema(self.output_schema)
+
+        # Generate function name: think_{agent_name} (sanitized)
+        sanitized_name = self.name.lower().replace(" ", "_").replace("-", "_")
+        function_name = f"think_{sanitized_name}"
+
         if self.enable_streaming:
             # STREAMING PATH
-            thought = await self._think_streaming(context, instructions)
+            thought = await self._think_streaming(
+                context, instructions, thought_schema, function_name
+            )
         else:
             # NON-STREAMING PATH (existing code)
             response = await self.opper.call_async(
-                name="think",
+                name=function_name,
                 instructions=instructions,
                 input=context,
-                output_schema=Thought,  # type: ignore[arg-type]
+                output_schema=thought_schema,  # type: ignore[arg-type]
                 model=self.model,
                 parent_span_id=self.context.parent_span_id,
             )
@@ -377,7 +423,7 @@ The memory you write persists across all process() calls on this agent.
                 response=response,
             )
 
-            thought = Thought(**response.json_payload)
+            thought = thought_schema(**response.json_payload)
 
         # Trigger: think_end (same for both paths)
         await self.hook_manager.trigger(
@@ -483,8 +529,12 @@ Follow any instructions provided for formatting and style."""
                 )
             else:
                 # NON-STREAMING PATH (existing code)
+                # Generate dynamic function name for better traceability
+                sanitized_name = self.name.lower().replace(" ", "_").replace("-", "_")
+                function_name = f"generate_final_result_{sanitized_name}"
+
                 response = await self.opper.call_async(
-                    name="generate_final_result",
+                    name=function_name,
                     instructions=instructions,
                     input=context,
                     output_schema=self.output_schema,  # type: ignore[arg-type]
@@ -530,7 +580,13 @@ Follow any instructions provided for formatting and style."""
             if self.logger:
                 self.logger.log_warning(f"Could not track usage: {e}")
 
-    async def _think_streaming(self, context: dict, instructions: str) -> Thought:
+    async def _think_streaming(
+        self,
+        context: dict,
+        instructions: str,
+        thought_schema: Type[Thought],
+        function_name: str,
+    ) -> Thought:
         """
         Streaming version of _think().
 
@@ -539,6 +595,8 @@ Follow any instructions provided for formatting and style."""
         Args:
             context: Context dict to send to LLM
             instructions: Instructions for the LLM
+            thought_schema: The Thought schema to use (may include typed final_result)
+            function_name: The function name for Opper call
 
         Returns:
             Parsed Thought model
@@ -558,10 +616,10 @@ Follow any instructions provided for formatting and style."""
         try:
             # Call Opper streaming API
             stream_response = await self.opper.stream_async(
-                name="think",
+                name=function_name,
                 instructions=instructions,
                 input=context,
-                output_schema=Thought,  # type: ignore[arg-type]
+                output_schema=thought_schema,  # type: ignore[arg-type]
                 model=self.model,
                 parent_span_id=self.context.parent_span_id,
             )
@@ -616,15 +674,15 @@ Follow any instructions provided for formatting and style."""
             # If no json_path was provided, fall back to putting all text in reasoning
             if set(field_buffers.keys()) == {"_root"}:
                 thought_text = "".join(field_buffers.get("_root", []))
-                thought = Thought(reasoning=thought_text)
+                thought = thought_schema(reasoning=thought_text)
             else:
                 # Reconstruct full JSON response
                 json_response = self._reconstruct_json_from_buffers(
-                    field_buffers, Thought
+                    field_buffers, thought_schema
                 )
 
                 # Parse with Pydantic (same as non-streaming)
-                thought = Thought(**json_response)
+                thought = thought_schema(**json_response)
 
             # Track usage if available directly, otherwise via span lookup
             if hasattr(stream_response, "usage") and getattr(stream_response, "usage"):
@@ -735,10 +793,12 @@ Follow any instructions provided for formatting and style."""
         normalized = self._normalize_indexed(result)
 
         # Special repair for Thought.tool_calls to ensure proper list-of-dicts shape
+        # Also handle dynamic schemas like Thought_Story that inherit from Thought
         try:
             from .schemas import Thought as ThoughtSchema
 
-            if schema is ThoughtSchema and isinstance(normalized, dict):
+            # Use issubclass to handle dynamic Thought_{OutputSchema} variants
+            if issubclass(schema, ThoughtSchema) and isinstance(normalized, dict):
                 tc = normalized.get("tool_calls")
                 # Convert dict of indexed items to list
                 if isinstance(tc, dict):
@@ -759,6 +819,12 @@ Follow any instructions provided for formatting and style."""
                         else:
                             fixed.append(v)
                     normalized["tool_calls"] = fixed
+
+                # Handle empty string final_result - should be None for Optional field
+                # This happens when streaming doesn't produce a final_result value
+                fr = normalized.get("final_result")
+                if fr == "" or fr == {}:
+                    normalized["final_result"] = None
         except Exception:
             # Best-effort; do not break if repair fails
             pass
@@ -938,9 +1004,13 @@ Follow any instructions provided for formatting and style."""
         field_buffers: dict[str, list[str]] = {}
         stream_span_id: Optional[str] = None
 
+        # Generate dynamic function name for better traceability
+        sanitized_name = self.name.lower().replace(" ", "_").replace("-", "_")
+        function_name = f"generate_final_result_{sanitized_name}"
+
         try:
             stream_response = await self.opper.stream_async(
-                name="generate_final_result",
+                name=function_name,
                 instructions=instructions,
                 input=context,
                 output_schema=self.output_schema,  # type: ignore[arg-type]

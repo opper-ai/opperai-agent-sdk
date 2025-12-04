@@ -38,8 +38,12 @@ class ExcelDownloadResult(BaseModel):
     message: str = Field(description="Status message")
     email_subject: Optional[str] = Field(default=None, description="Email subject")
     email_sender: Optional[str] = Field(default=None, description="Email sender")
-    excel_filename: Optional[str] = Field(default=None, description="Name of the Excel file")
-    file_url: Optional[str] = Field(default=None, description="S3 URL of the Excel file")
+    excel_filename: Optional[str] = Field(
+        default=None, description="Name of the Excel file"
+    )
+    file_url: Optional[str] = Field(
+        default=None, description="S3 URL of the Excel file"
+    )
 
 
 @hook("loop_end")
@@ -64,12 +68,14 @@ async def fetch_binary_file(url: str, filename: str) -> str:
         Success message with the saved file path
     """
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+        async with session.get(
+            url, timeout=aiohttp.ClientTimeout(total=30)
+        ) as response:
             response.raise_for_status()
             content = await response.read()
 
             # Save the binary content
-            with open(filename, 'wb') as f:
+            with open(filename, "wb") as f:
                 f.write(content)
 
             return f"Successfully downloaded and saved file to {filename} ({len(content)} bytes)"
@@ -103,9 +109,7 @@ async def main() -> None:
         transport="streamable-http",
         url=composio_url,
         headers=(
-            {"Authorization": f"Bearer {composio_api_key}"}
-            if composio_api_key
-            else {}
+            {"Authorization": f"Bearer {composio_api_key}"} if composio_api_key else {}
         ),
     )
 
@@ -201,6 +205,7 @@ Be thorough and provide clear information about what you find.""",
         print('   - Ensure you have an email with subject "test_excel" in your inbox')
         print("   - Check that the email has an Excel attachment")
         import traceback
+
         traceback.print_exc()
 
 

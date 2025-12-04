@@ -4,10 +4,14 @@ ReAct Agent implementation.
 This module implements the ReAct (Reasoning + Acting) pattern agent.
 """
 
-from typing import Any, Optional
+from typing import Any, Optional, Type
 
 from ..core.agent import Agent
-from ..core.schemas import ReactThought, ToolCall
+from ..core.schemas import (
+    ReactThought,
+    ToolCall,
+    create_react_thought_with_output_schema,
+)
 from ..base.context import ExecutionCycle
 from ..base.hooks import HookEvents
 
@@ -57,6 +61,47 @@ class ReactAgent(Agent):
 
             # Check if task is complete
             if thought.is_complete:
+                # Check for final result in thought (single LLM call pattern)
+                if thought.final_result is not None:
+                    final_result = thought.final_result
+
+                    # If output_schema is specified, validate the final_result
+                    if self.output_schema:
+                        # Already validated by dynamic schema (Pydantic did it during ReactThought construction)
+                        if isinstance(final_result, self.output_schema):
+                            pass  # Already correct type
+                        elif isinstance(final_result, dict):
+                            try:
+                                final_result = self.output_schema(**final_result)
+                            except Exception:
+                                # Validation failed - fall back to _generate_final_result
+                                if self.verbose:
+                                    print(
+                                        "Final result validation failed - generating structured result"
+                                    )
+                                break
+                        else:
+                            # final_result is not a dict and not the expected type
+                            # Fall back to _generate_final_result
+                            if self.verbose:
+                                print(
+                                    "Final result not structured - generating structured result"
+                                )
+                            break
+
+                    if self.verbose:
+                        print(
+                            f"✓ Task completed in {self.context.iteration + 1} iteration(s)"
+                        )
+
+                    # Trigger loop end before returning
+                    await self.hook_manager.trigger(
+                        HookEvents.LOOP_END, self.context, agent=self
+                    )
+
+                    return final_result
+
+                # Fallback to old behavior
                 if self.verbose:
                     print("Task complete - generating final result")
                 break
@@ -165,14 +210,22 @@ class ReactAgent(Agent):
 YOUR TASK:
 1. Reason about the current observation and situation
 2. Decide if the goal is complete or if you need to take an action
-3. If complete: set is_complete=True and action=None
-4. If not complete: set is_complete=False and specify the action to take
+3. If complete:
+   - Set is_complete=True
+   - Provide the complete answer/output in final_result
+   - Set action=None
+4. If not complete:
+   - Set is_complete=False
+   - Specify the action to take
+   - Leave final_result as None
 
 IMPORTANT:
+- When task is COMPLETE, you MUST set is_complete=True AND provide final_result
+- The final_result should be a complete, well-structured answer based on all work done
 - You can only call ONE tool per iteration
 - Analyze the observation carefully before deciding
 - Use available tools to accomplish the goal
-- Set is_complete=True when you have enough information to answer the goal
+- If an output_schema was specified, ensure final_result matches that schema
 """
 
         # Trigger: llm_call
@@ -183,16 +236,25 @@ IMPORTANT:
             call_type="reason",
         )
 
+        # Create dynamic ReactThought schema with typed final_result if output_schema is specified
+        thought_schema = create_react_thought_with_output_schema(self.output_schema)
+
+        # Generate function name: reason_{agent_name} (sanitized)
+        sanitized_name = self.name.lower().replace(" ", "_").replace("-", "_")
+        function_name = f"reason_{sanitized_name}"
+
         # Choose streaming or non-streaming path
         if getattr(self, "enable_streaming", False):
-            thought = await self._reason_streaming(context, instructions)
+            thought = await self._reason_streaming(
+                context, instructions, thought_schema, function_name
+            )
         else:
             # Call Opper (non-streaming)
             response = await self.opper.call_async(
-                name="react_reason",
+                name=function_name,
                 instructions=instructions,
                 input=context,
-                output_schema=ReactThought,  # type: ignore[arg-type]
+                output_schema=thought_schema,  # type: ignore[arg-type]
                 model=self.model,
                 parent_span_id=self.context.parent_span_id,
             )
@@ -215,7 +277,7 @@ IMPORTANT:
                 response=response,
             )
 
-            thought = ReactThought(**response.json_payload)
+            thought = thought_schema(**response.json_payload)
 
         # Trigger: think_end (for consistency with base Agent)
         await self.hook_manager.trigger(
@@ -227,7 +289,13 @@ IMPORTANT:
 
         return thought
 
-    async def _reason_streaming(self, context: dict, instructions: str) -> ReactThought:
+    async def _reason_streaming(
+        self,
+        context: dict,
+        instructions: str,
+        thought_schema: Type[ReactThought],
+        function_name: str,
+    ) -> ReactThought:
         """Streaming version of _reason() for ReAct agent."""
         assert self.context is not None, "Context must be initialized"
 
@@ -244,10 +312,10 @@ IMPORTANT:
 
         try:
             stream_response = await self.opper.stream_async(
-                name="react_reason",
+                name=function_name,
                 instructions=instructions,
                 input=context,
-                output_schema=ReactThought,  # type: ignore[arg-type]
+                output_schema=thought_schema,  # type: ignore[arg-type]
                 model=self.model,
                 parent_span_id=self.context.parent_span_id,
             )
@@ -295,15 +363,15 @@ IMPORTANT:
             # If no json_path was provided, fall back to creating a basic ReactThought
             if set(field_buffers.keys()) == {"_root"}:
                 thought_text = "".join(field_buffers.get("_root", []))
-                thought = ReactThought(reasoning=thought_text, is_complete=True)
+                thought = thought_schema(reasoning=thought_text, is_complete=True)
             else:
                 # Reconstruct full JSON response using Agent helper
                 from ..core.agent import Agent as BaseAgentImpl
 
                 json_response = BaseAgentImpl._reconstruct_json_from_buffers(
-                    self, field_buffers, ReactThought
+                    self, field_buffers, thought_schema
                 )
-                thought = ReactThought(**json_response)
+                thought = thought_schema(**json_response)
 
             # Track usage for streaming via span lookup if direct usage missing
             try:

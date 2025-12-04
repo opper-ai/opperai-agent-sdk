@@ -76,12 +76,13 @@ async def test_llm_response_includes_response_and_parsed(
                 self.usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 1}
                 self.marker = marker
 
-        if name == "think":
+        # Accept dynamic function names: think_{agent_name}, generate_final_result_{agent_name}
+        if name.startswith("think_"):
             return Response(gen_think(), marker="think_resp")
-        elif name == "generate_final_result":
+        elif name.startswith("generate_final_result_"):
             return Response(gen_final(), marker="final_resp")
         else:
-            raise AssertionError("unexpected stream name")
+            raise AssertionError(f"unexpected stream name: {name}")
 
     mock_opper_client.stream_async = AsyncMock(side_effect=stream_async)
 

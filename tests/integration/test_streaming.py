@@ -46,9 +46,10 @@ async def test_agent_streaming_flow(mock_opper_client, opper_api_key):
                 self.result = result
                 self.usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 1}
 
-        if name == "think":
+        # Function names are now dynamic: think_{agent_name}, generate_final_result_{agent_name}
+        if name == "think_streamtest":
             return Response(gen_think())
-        elif name == "generate_final_result":
+        elif name == "generate_final_result_streamtest":
             return Response(gen_final())
         else:
             raise AssertionError(f"Unexpected stream call name: {name}")

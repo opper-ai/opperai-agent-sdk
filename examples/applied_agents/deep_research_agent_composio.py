@@ -128,10 +128,19 @@ async def main() -> None:
             sources_required=3,
         )
     )
+
+    # Pretty print the structured result
     print("\n" + "=" * 60)
-    print("FINAL RESULT:")
+    print("RESEARCH FINDINGS")
     print("=" * 60)
-    print(result)
+    print(f"\nTopic: {result.topic}\n")
+    print("Executive Summary:")
+    print(f"   {result.executive_summary}\n")
+    print("Key Findings:")
+    for i, finding in enumerate(result.key_findings, 1):
+        print(f"   {i}. {finding}")
+    print("\nDetailed Analysis:")
+    print(f"   {result.detailed_analysis}\n")
 
 
 if __name__ == "__main__":
