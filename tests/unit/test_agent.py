@@ -541,15 +541,22 @@ async def test_tool_call_span_creation(mock_opper_client):
     assert tool2_call.kwargs["parent_id"] == "parent-span-123"
 
     # Verify tool spans were updated with results
-    assert mock_opper_client.spans.update_async.call_count == 3  # 2 tools + 1 parent
+    # 2 tools + 1 parent + 2 think spans (renaming)
+    assert mock_opper_client.spans.update_async.call_count == 5
 
-    # Check tool result updates (first two calls are for tools)
-    tool1_update = mock_opper_client.spans.update_async.call_args_list[0]
-    assert tool1_update.kwargs["span_id"] == "tool-span-1"
+    # Check tool result updates
+    tool1_update = [
+        c
+        for c in mock_opper_client.spans.update_async.call_args_list
+        if c.kwargs.get("span_id") == "tool-span-1"
+    ][0]
     assert "5" in tool1_update.kwargs["output"]
 
-    tool2_update = mock_opper_client.spans.update_async.call_args_list[1]
-    assert tool2_update.kwargs["span_id"] == "tool-span-2"
+    tool2_update = [
+        c
+        for c in mock_opper_client.spans.update_async.call_args_list
+        if c.kwargs.get("span_id") == "tool-span-2"
+    ][0]
     assert "20" in tool2_update.kwargs["output"]
 
 
