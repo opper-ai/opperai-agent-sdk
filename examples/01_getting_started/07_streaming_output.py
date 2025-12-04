@@ -59,9 +59,13 @@ async def on_chunk_verbose(context: AgentContext, chunk_data: dict, **kwargs) ->
     json_path = chunk_data.get("json_path", "")
     delta = chunk_data.get("delta", "")
 
-    # Log hook event with path
-    if json_path != "content":
-        # Non-content fields: print a concise hook line
+    # Check if this is a content field we want to stream inline
+    # With single LLM call pattern, final_result fields come during "think"
+    # with paths like "final_result.content"
+    is_content_field = json_path == "content" or json_path == "final_result.content"
+
+    # Log hook event with path for non-content fields
+    if not is_content_field:
         if isinstance(delta, str) and delta.strip():
             print(
                 f"[hook STREAM_CHUNK] call_type={call_type} path={json_path} delta={delta}"
@@ -101,13 +105,13 @@ async def on_chunk_minimal(context: AgentContext, chunk_data: dict, **kwargs) ->
             _state_min.think_started = True
         print(delta, end="", flush=True)
         return
-    # Show only the final content inline
-    if (
-        call_type == "final_result"
-        and json_path == "content"
-        and isinstance(delta, str)
-        and delta.strip()
-    ):
+    # Show final content inline - with single LLM call pattern, final_result
+    # is streamed during "think" with json_path="final_result.content"
+    # Also support legacy "final_result" call_type for backward compatibility
+    is_final_content = (
+        call_type == "think" and json_path == "final_result.content"
+    ) or (call_type == "final_result" and json_path == "content")
+    if is_final_content and isinstance(delta, str) and delta.strip():
         if not _state_min.final_started:
             print("\nFinal output...")
             _state_min.final_started = True

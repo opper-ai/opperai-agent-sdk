@@ -47,12 +47,13 @@ async def test_streaming_usage_via_span_lookup(mock_opper_client, opper_api_key)
                 # Simulate no direct usage on streaming response
                 self.usage = None
 
-        if name == "think":
+        # Accept dynamic function names: think_{agent_name}, generate_final_result_{agent_name}
+        if name.startswith("think_"):
             return Resp(gen_think())
-        elif name == "generate_final_result":
+        elif name.startswith("generate_final_result_"):
             return Resp(gen_final())
         else:
-            raise AssertionError("unexpected stream call name")
+            raise AssertionError(f"unexpected stream call name: {name}")
 
     mock_opper_client.stream_async = AsyncMock(side_effect=stream_async)
 

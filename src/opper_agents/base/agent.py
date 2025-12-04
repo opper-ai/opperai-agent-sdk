@@ -49,6 +49,7 @@ class BaseAgent(ABC):
         logger: Optional[AgentLogger] = None,
         model: Optional[str] = None,
         opper_api_key: Optional[str] = None,
+        opper_server_url: Optional[str] = None,
         enable_streaming: bool = False,
     ):
         """
@@ -67,6 +68,7 @@ class BaseAgent(ABC):
             logger: Custom logger instance (defaults to SimpleLogger if verbose=True)
             model: Default model for LLM calls
             opper_api_key: Opper API key (or from env)
+            opper_server_url: Optional custom Opper server URL (for local instances)
             enable_streaming: Enable streaming responses from LLM calls (default: False)
         """
         # Basic config
@@ -103,7 +105,10 @@ class BaseAgent(ABC):
             raise ValueError("OPPER_API_KEY not found in environment or parameters")
 
         # Create Opper client
-        self.opper = Opper(http_bearer=api_key)
+        if opper_server_url:
+            self.opper = Opper(http_bearer=api_key, server_url=opper_server_url)
+        else:
+            self.opper = Opper(http_bearer=api_key)
 
         # Override the User-Agent in the SDK configuration
         # The Opper SDK ignores client headers and uses its own user_agent from SDKConfiguration

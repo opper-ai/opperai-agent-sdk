@@ -38,8 +38,12 @@ class CSVDownloadResult(BaseModel):
     message: str = Field(description="Status message")
     email_subject: Optional[str] = Field(default=None, description="Email subject")
     email_sender: Optional[str] = Field(default=None, description="Email sender")
-    csv_filename: Optional[str] = Field(default=None, description="Name of the CSV file")
-    csv_content: Optional[str] = Field(default=None, description="Content of the CSV file")
+    csv_filename: Optional[str] = Field(
+        default=None, description="Name of the CSV file"
+    )
+    csv_content: Optional[str] = Field(
+        default=None, description="Content of the CSV file"
+    )
 
 
 @hook("loop_end")
@@ -63,7 +67,9 @@ async def fetch_url(url: str) -> str:
         The text content from the URL
     """
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+        async with session.get(
+            url, timeout=aiohttp.ClientTimeout(total=30)
+        ) as response:
             response.raise_for_status()
             return await response.text()
 
@@ -96,9 +102,7 @@ async def main() -> None:
         transport="streamable-http",
         url=composio_url,
         headers=(
-            {"Authorization": f"Bearer {composio_api_key}"}
-            if composio_api_key
-            else {}
+            {"Authorization": f"Bearer {composio_api_key}"} if composio_api_key else {}
         ),
     )
 
@@ -168,12 +172,12 @@ Be thorough and provide clear information about what you find.""",
             if result.csv_content:
                 # Save the CSV file locally
                 output_path = f"./{result.csv_filename}"
-                with open(output_path, 'w') as f:
+                with open(output_path, "w") as f:
                     f.write(result.csv_content)
                 print(f"  ✓ Saved to: {output_path}")
 
                 # Show first few lines of CSV
-                lines = result.csv_content.split('\n')[:5]
+                lines = result.csv_content.split("\n")[:5]
                 print(f"\nFirst few lines of CSV:")
                 for line in lines:
                     print(f"  {line}")
@@ -192,6 +196,7 @@ Be thorough and provide clear information about what you find.""",
         print('   - Ensure you have an email with subject "test_csv" in your inbox')
         print("   - Check that the email has a CSV attachment")
         import traceback
+
         traceback.print_exc()
 
 

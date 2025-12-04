@@ -330,7 +330,8 @@ async def test_multiple_exceptions_all_emit_stream_end(
     # Fail on first call (think), succeed on second (won't happen)
     async def stream_async(name: str, **kwargs):
         call_count[0] += 1
-        if name == "think":
+        # Accept dynamic think names (think_{agent_name})
+        if name.startswith("think_"):
             raise RuntimeError("Think stream failed")
         # Won't reach here
         raise AssertionError("Should not reach final_result")

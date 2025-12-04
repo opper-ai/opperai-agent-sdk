@@ -42,9 +42,10 @@ async def test_react_agent_streaming(mock_opper_client, opper_api_key):
                 self.result = result
                 self.usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 1}
 
-        if name == "react_reason":
+        # Function names are now dynamic: reason_{agent_name}, generate_final_result_{agent_name}
+        if name == "reason_reactstream":
             return Response(gen_reason())
-        elif name == "generate_final_result":
+        elif name == "generate_final_result_reactstream":
             return Response(gen_final())
         else:
             raise AssertionError(f"Unexpected stream call: {name}")
