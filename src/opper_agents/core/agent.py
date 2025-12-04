@@ -5,6 +5,7 @@ This module contains the primary Agent class that implements the think-act loop.
 """
 
 from typing import Any, Optional, List, Type
+from datetime import datetime, timezone
 from pydantic import BaseModel
 
 from ..base.agent import BaseAgent
@@ -75,6 +76,8 @@ class Agent(BaseAgent):
         try:
             await self._activate_tool_providers()
 
+            start_time = datetime.now(timezone.utc)
+
             # Create parent span for this agent execution
             # If _parent_span_id is provided, this span will be nested under it
             parent_span = await self.opper.spans.create_async(
@@ -106,9 +109,16 @@ class Agent(BaseAgent):
                 # Shield from AnyIO cancel scopes that may have been left by MCP cleanup
                 import anyio
 
+                end_time = datetime.now(timezone.utc)
+                duration_ms = int((end_time - start_time).total_seconds() * 1000)
+
                 with anyio.CancelScope(shield=True):
                     await self.opper.spans.update_async(
-                        span_id=parent_span.id, output=str(result)
+                        span_id=parent_span.id,
+                        output=str(result),
+                        start_time=start_time,
+                        end_time=end_time,
+                        duration=duration_ms,
                     )
 
             return result
@@ -169,6 +179,7 @@ class Agent(BaseAgent):
                     if self.logger:
                         self.logger.log_memory_read(thought.memory_reads)
 
+                    mem_read_start = datetime.now(timezone.utc)
                     memory_read_span = await self.opper.spans.create_async(
                         name="memory_read",
                         input=str(thought.memory_reads),
@@ -177,9 +188,17 @@ class Agent(BaseAgent):
 
                     memory_data = await self.context.memory.read(thought.memory_reads)
 
+                    mem_read_end = datetime.now(timezone.utc)
+                    mem_read_duration = int(
+                        (mem_read_end - mem_read_start).total_seconds() * 1000
+                    )
+
                     await self.opper.spans.update_async(
                         span_id=memory_read_span.id,
                         output=str(memory_data),
+                        start_time=mem_read_start,
+                        end_time=mem_read_end,
+                        duration=mem_read_duration,
                     )
 
                     self.context.metadata["current_memory"] = memory_data
@@ -198,6 +217,7 @@ class Agent(BaseAgent):
                             list(thought.memory_updates.keys())
                         )
 
+                    mem_write_start = datetime.now(timezone.utc)
                     memory_write_span = await self.opper.spans.create_async(
                         name="memory_write",
                         input=str(list(thought.memory_updates.keys())),
@@ -212,9 +232,17 @@ class Agent(BaseAgent):
                             metadata=update.get("metadata"),
                         )
 
+                    mem_write_end = datetime.now(timezone.utc)
+                    mem_write_duration = int(
+                        (mem_write_end - mem_write_start).total_seconds() * 1000
+                    )
+
                     await self.opper.spans.update_async(
                         span_id=memory_write_span.id,
                         output=f"Successfully wrote {len(thought.memory_updates)} keys",
+                        start_time=mem_write_start,
+                        end_time=mem_write_end,
+                        duration=mem_write_duration,
                     )
 
                     memory_writes_performed = True
@@ -450,6 +478,7 @@ The memory you write persists across all process() calls on this agent.
             )
 
         # Create span for this tool call
+        tool_start_time = datetime.now(timezone.utc)
         tool_span = await self.opper.spans.create_async(
             name=f"tool_{tool_call.name}",
             input=str(tool_call.parameters),
@@ -470,11 +499,17 @@ The memory you write persists across all process() calls on this agent.
             **tool_call.parameters, _parent_span_id=tool_span.id
         )
 
+        tool_end_time = datetime.now(timezone.utc)
+        tool_duration_ms = int((tool_end_time - tool_start_time).total_seconds() * 1000)
+
         # Update tool span with result
         await self.opper.spans.update_async(
             span_id=tool_span.id,
             output=str(result.result) if result.success else None,
             error=result.error if not result.success else None,
+            start_time=tool_start_time,
+            end_time=tool_end_time,
+            duration=tool_duration_ms,
         )
 
         # Trigger: tool_result
