@@ -84,6 +84,7 @@ class Agent(BaseAgent):
                 name=f"{self.name}_execution",
                 input=str(input),
                 parent_id=_parent_span_id,
+                type="agent 🤖", # Feature 2
             )
             self.context.parent_span_id = parent_span.id
 
@@ -184,6 +185,7 @@ class Agent(BaseAgent):
                         name="memory_read",
                         input=str(thought.memory_reads),
                         parent_id=self.context.parent_span_id,
+                        type="memory 🧠", # Feature 2
                     )
 
                     memory_data = await self.context.memory.read(thought.memory_reads)
@@ -222,6 +224,7 @@ class Agent(BaseAgent):
                         name="memory_write",
                         input=str(list(thought.memory_updates.keys())),
                         parent_id=self.context.parent_span_id,
+                        type="memory 🧠", # Feature 2
                     )
 
                     for key, update in thought.memory_updates.items():
@@ -483,6 +486,7 @@ The memory you write persists across all process() calls on this agent.
             name=f"tool_{tool_call.name}",
             input=str(tool_call.parameters),
             parent_id=self.context.parent_span_id,
+            type="tool 🔧", # Feature 2
         )
 
         # Trigger: tool_call
