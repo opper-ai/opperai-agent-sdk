@@ -249,8 +249,9 @@ async def main() -> None:
     - Be concise and actionable
     - Prioritize important information
     - Use clear formatting in Notion
-    - Include links where relevant
+    - Include links where relevant - ALWAYS use descriptive titles for links (e.g., "Read the full article on TechCrunch" instead of just "link")
     - Use bullet points and headings effectively
+    - When adding URLs, make them clickable with meaningful anchor text that describes the destination
     """
 
     print("\nCreating Daily Digest Agent with multiple MCP tools...")
@@ -327,6 +328,16 @@ async def main() -> None:
         print("FULL RESULT:")
         print("=" * 60)
         print(result.model_dump_json(indent=2))
+
+        # Print token usage summary
+        if agent.context:
+            print("\n" + "=" * 60)
+            print("TOKEN USAGE SUMMARY:")
+            print("=" * 60)
+            print(f"  LLM requests:  {agent.context.usage.requests}")
+            print(f"  Input tokens:  {agent.context.usage.input_tokens:,}")
+            print(f"  Output tokens: {agent.context.usage.output_tokens:,}")
+            print(f"  Total tokens:  {agent.context.usage.total_tokens:,}")
 
     except Exception as e:
         print(f"\nError: {e}")

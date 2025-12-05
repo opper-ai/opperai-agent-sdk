@@ -475,6 +475,7 @@ async def test_tool_call_span_creation(mock_opper_client):
         ]
     )
     mock_opper_client.spans.update_async = AsyncMock()
+    mock_opper_client.spans.get_async = AsyncMock()  # For span existence check
 
     # Mock LLM calls
     mock_opper_client.call_async = AsyncMock(

@@ -84,7 +84,7 @@ class Agent(BaseAgent):
                 name=f"{self.name}_execution",
                 input=str(input),
                 parent_id=_parent_span_id,
-                type="agent 🤖", # Feature 2
+                type="agent 🤖",  # Feature 2
             )
             self.context.parent_span_id = parent_span.id
 
@@ -111,7 +111,6 @@ class Agent(BaseAgent):
                 import anyio
 
                 end_time = datetime.now(timezone.utc)
-                duration_ms = int((end_time - start_time).total_seconds() * 1000)
 
                 with anyio.CancelScope(shield=True):
                     await self.opper.spans.update_async(
@@ -119,7 +118,6 @@ class Agent(BaseAgent):
                         output=str(result),
                         start_time=start_time,
                         end_time=end_time,
-                        meta={"duration_ms": duration_ms},
                     )
 
             return result
@@ -185,22 +183,18 @@ class Agent(BaseAgent):
                         name="memory_read",
                         input=str(thought.memory_reads),
                         parent_id=self.context.parent_span_id,
-                        type="memory 🧠", # Feature 2
+                        type="memory 🧠",  # Feature 2
                     )
 
                     memory_data = await self.context.memory.read(thought.memory_reads)
 
                     mem_read_end = datetime.now(timezone.utc)
-                    mem_read_duration = int(
-                        (mem_read_end - mem_read_start).total_seconds() * 1000
-                    )
 
                     await self.opper.spans.update_async(
                         span_id=memory_read_span.id,
                         output=str(memory_data),
                         start_time=mem_read_start,
                         end_time=mem_read_end,
-                        meta={"duration_ms": mem_read_duration},
                     )
 
                     self.context.metadata["current_memory"] = memory_data
@@ -224,7 +218,7 @@ class Agent(BaseAgent):
                         name="memory_write",
                         input=str(list(thought.memory_updates.keys())),
                         parent_id=self.context.parent_span_id,
-                        type="memory 🧠", # Feature 2
+                        type="memory 🧠",  # Feature 2
                     )
 
                     for key, update in thought.memory_updates.items():
@@ -236,16 +230,12 @@ class Agent(BaseAgent):
                         )
 
                     mem_write_end = datetime.now(timezone.utc)
-                    mem_write_duration = int(
-                        (mem_write_end - mem_write_start).total_seconds() * 1000
-                    )
 
                     await self.opper.spans.update_async(
                         span_id=memory_write_span.id,
                         output=f"Successfully wrote {len(thought.memory_updates)} keys",
                         start_time=mem_write_start,
                         end_time=mem_write_end,
-                        meta={"duration_ms": mem_write_duration},
                     )
 
                     memory_writes_performed = True
@@ -442,11 +432,16 @@ The memory you write persists across all process() calls on this agent.
                 parent_span_id=self.context.parent_span_id,
             )
 
-            # Rename span to simpler "think" (function name remains detailed for Opper)
+            # Rename span to simpler "think" (best-effort, may fail silently)
+            # First ensure span exists by fetching it (like Node SDK does)
             if hasattr(response, "span_id") and response.span_id:
-                await self.opper.spans.update_async(
-                    span_id=response.span_id, name="think"
-                )
+                try:
+                    await self.opper.spans.get_async(span_id=response.span_id)
+                    await self.opper.spans.update_async(
+                        span_id=response.span_id, name="think"
+                    )
+                except Exception:
+                    pass  # Span may not be updatable
 
             # Track usage
             self._track_usage(response)
@@ -492,7 +487,7 @@ The memory you write persists across all process() calls on this agent.
             name=f"tool_{tool_call.name}",
             input=str(tool_call.parameters),
             parent_id=self.context.parent_span_id,
-            type="tool 🔧", # Feature 2
+            type="tool 🔧",  # Feature 2
         )
 
         # Trigger: tool_call
@@ -510,7 +505,6 @@ The memory you write persists across all process() calls on this agent.
         )
 
         tool_end_time = datetime.now(timezone.utc)
-        tool_duration_ms = int((tool_end_time - tool_start_time).total_seconds() * 1000)
 
         # Update tool span with result
         await self.opper.spans.update_async(
@@ -519,7 +513,6 @@ The memory you write persists across all process() calls on this agent.
             error=result.error if not result.success else None,
             start_time=tool_start_time,
             end_time=tool_end_time,
-            meta={"duration_ms": tool_duration_ms},
         )
 
         # Trigger: tool_result
@@ -764,6 +757,18 @@ Follow any instructions provided for formatting and style."""
                             f"Could not fetch streaming usage: {usage_exc}"
                         )
 
+            # Rename span to simpler "think" (best-effort, may fail silently)
+            # First ensure span exists by fetching it (like Node SDK does)
+            if stream_span_id:
+                try:
+                    # Fetch span first to ensure it's committed in the database
+                    await self.opper.spans.get_async(span_id=stream_span_id)
+                    await self.opper.spans.update_async(
+                        span_id=stream_span_id, name="think"
+                    )
+                except Exception:
+                    pass  # Span may not be updatable
+
             # Trigger: llm_response (include raw stream response and parsed model)
             await self.hook_manager.trigger(
                 HookEvents.LLM_RESPONSE,
@@ -773,10 +778,6 @@ Follow any instructions provided for formatting and style."""
                 response=stream_response,
                 parsed=thought,
             )
-
-            # Rename span to simpler "think"
-            if stream_span_id:
-                await self.opper.spans.update_async(span_id=stream_span_id, name="think")
 
             return thought
 

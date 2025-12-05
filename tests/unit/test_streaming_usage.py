@@ -58,10 +58,12 @@ async def test_streaming_usage_via_span_lookup(mock_opper_client, opper_api_key)
     mock_opper_client.stream_async = AsyncMock(side_effect=stream_async)
 
     # Mock spans.get_async -> returns object with trace_id
+    # Called for: usage tracking (think), span rename (think), usage tracking (final)
     mock_opper_client.spans.get_async = AsyncMock(
         side_effect=[
-            AsyncMock(trace_id="trace-1"),
-            AsyncMock(trace_id="trace-1"),
+            AsyncMock(trace_id="trace-1"),  # usage tracking for think
+            AsyncMock(trace_id="trace-1"),  # span rename check for think
+            AsyncMock(trace_id="trace-1"),  # usage tracking for final_result
         ]
     )
 
