@@ -23,7 +23,7 @@ The agent will:
 import asyncio
 import os
 import sys
-from typing import List, Dict, Any, Optional
+from typing import Optional
 from pydantic import BaseModel, Field
 
 from opper_agents import Agent, hook, mcp, MCPServerConfig, tool
@@ -148,7 +148,7 @@ Be thorough and provide clear information about what you find.""",
     - CSV filename
     - COMPLETE CSV file content (all rows, not truncated)"""
 
-    print(f'\nGoal: Find email with subject "test_csv" and download CSV attachment')
+    print('\nGoal: Find email with subject "test_csv" and download CSV attachment')
     print("Running Gmail Agent...\n")
 
     try:
@@ -161,12 +161,12 @@ Be thorough and provide clear information about what you find.""",
         print(f"Message: {result.message}")
 
         if result.email_subject:
-            print(f"\nEmail Details:")
+            print("\nEmail Details:")
             print(f"  Subject: {result.email_subject}")
             print(f"  Sender: {result.email_sender}")
 
         if result.csv_filename:
-            print(f"\nCSV File:")
+            print("\nCSV File:")
             print(f"  Filename: {result.csv_filename}")
 
             if result.csv_content:
@@ -178,7 +178,7 @@ Be thorough and provide clear information about what you find.""",
 
                 # Show first few lines of CSV
                 lines = result.csv_content.split("\n")[:5]
-                print(f"\nFirst few lines of CSV:")
+                print("\nFirst few lines of CSV:")
                 for line in lines:
                     print(f"  {line}")
         else:
