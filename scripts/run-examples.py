@@ -2,11 +2,14 @@ import os
 import subprocess
 import sys
 
+
 def run_example(file_path):
     print(f"\n=== Running example: {file_path} ===")
     try:
         # Use sys.executable to ensure the correct python from venv is used
-        result = subprocess.run([sys.executable, file_path], check=True, capture_output=True, text=True)
+        result = subprocess.run(
+            [sys.executable, file_path], check=True, capture_output=True, text=True
+        )
         print(result.stdout)
         if result.stderr:
             print(f"Stderr:\n{result.stderr}")
@@ -24,6 +27,7 @@ def run_example(file_path):
         print(f"!!! An unexpected error occurred while running {file_path}: {e} !!!")
         return False
 
+
 def find_and_run_examples(base_dir="."):
     examples_dir = os.path.join(base_dir, "examples")
     if not os.path.isdir(examples_dir):
@@ -36,7 +40,7 @@ def find_and_run_examples(base_dir="."):
             if file.endswith(".py"):
                 all_examples.append(os.path.join(root, file))
 
-    all_examples.sort() # Run in a consistent order
+    all_examples.sort()  # Run in a consistent order
 
     failed_examples = []
     for example_file in all_examples:
@@ -55,5 +59,8 @@ def find_and_run_examples(base_dir="."):
             print(f"  - {fail}")
         sys.exit(1)
 
+
 if __name__ == "__main__":
-    find_and_run_examples(os.path.dirname(os.path.abspath(__file__)) + "/..") # Go up one level from scripts to project root
+    find_and_run_examples(
+        os.path.dirname(os.path.abspath(__file__)) + "/.."
+    )  # Go up one level from scripts to project root
