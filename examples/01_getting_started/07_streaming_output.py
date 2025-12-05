@@ -78,7 +78,9 @@ async def on_chunk_verbose(context: AgentContext, chunk_data: dict, **kwargs) ->
 
     # Handle user_message specifically for verbose mode
     if json_path == "user_message" and isinstance(delta, str) and delta.strip():
-        print(f"\n[User Message] {delta}", end="", flush=True) # Print user message on a new line
+        print(
+            f"\n[User Message] {delta}", end="", flush=True
+        )  # Print user message on a new line
         return
 
     # Content field: stream inline, but skip empty/whitespace-only deltas
@@ -116,7 +118,12 @@ async def on_chunk_minimal(context: AgentContext, chunk_data: dict, **kwargs) ->
         return
 
     # Show user_message updates minimally
-    if call_type == "think" and json_path == "user_message" and isinstance(delta, str) and delta.strip():
+    if (
+        call_type == "think"
+        and json_path == "user_message"
+        and isinstance(delta, str)
+        and delta.strip()
+    ):
         print(f"\nStatus: {delta}", end="", flush=True)
         return
 
