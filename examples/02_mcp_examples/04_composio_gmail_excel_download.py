@@ -159,7 +159,7 @@ Be thorough and provide clear information about what you find.""",
     - Excel filename
     - File URL (S3 URL)"""
 
-    print(f'\nGoal: Find email with subject "test_excel" and download Excel attachment')
+    print('\nGoal: Find email with subject "test_excel" and download Excel attachment')
     print("Running Gmail Agent...\n")
 
     try:
@@ -172,12 +172,12 @@ Be thorough and provide clear information about what you find.""",
         print(f"Message: {result.message}")
 
         if result.email_subject:
-            print(f"\nEmail Details:")
+            print("\nEmail Details:")
             print(f"  Subject: {result.email_subject}")
             print(f"  Sender: {result.email_sender}")
 
         if result.excel_filename:
-            print(f"\nExcel File:")
+            print("\nExcel File:")
             print(f"  Filename: {result.excel_filename}")
 
             if result.file_url:
@@ -189,7 +189,7 @@ Be thorough and provide clear information about what you find.""",
                 print(f"  ✓ Downloaded to: ./{result.excel_filename}")
                 print(f"  Size: {file_size:,} bytes")
             else:
-                print(f"  ⚠ File not found locally")
+                print("  ⚠ File not found locally")
         else:
             print("\nNo Excel file found in the email with subject 'test_excel'")
 

@@ -15,8 +15,6 @@ import os
 from opper_agents import Agent, tool, hook, HookEvents
 from opper_agents.base.context import AgentContext
 from pydantic import BaseModel, Field
-from rich.logging import RichHandler
-from opper_agents.utils.logging import RichLogger
 
 
 class Analysis(BaseModel):
