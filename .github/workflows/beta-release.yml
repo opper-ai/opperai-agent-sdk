@@ -27,6 +27,7 @@ jobs:
     environment: release
     permissions:
       contents: read
+      id-token: write  # For trusted publishing to PyPI
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -123,9 +124,9 @@ jobs:
           done
 
       - name: Publish to PyPI
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
-        run: uv publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          print-hash: true
 
       - name: Summary
         run: |
