@@ -1,0 +1,146 @@
+name: Beta/Nightly Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      manual_version:
+        description: 'Exact version to publish (e.g., 0.3.0b1). Overrides other inputs.'
+        required: false
+      tag:
+        description: 'PyPI tag suffix (e.g., beta, nightly, dev)'
+        required: true
+        default: 'beta'
+      bump_type:
+        description: 'Semver bump type (patch, minor, major, or none)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - none
+
+jobs:
+  beta-release:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write  # For trusted publishing to PyPI
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Set Beta Version
+        id: version
+        run: |
+          # Get current version from pyproject.toml
+          CURRENT_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "Current version: $CURRENT_VERSION"
+
+          if [ -n "${{ github.event.inputs.manual_version }}" ]; then
+            # CASE 1: Manual version provided (e.g., 0.3.0b1 or 0.3.0.dev1)
+            BETA_VERSION="${{ github.event.inputs.manual_version }}"
+            echo "🎯 Using manual version: $BETA_VERSION"
+          else
+            # CASE 2: Auto-generated timestamped version
+            # Parse current version (extract major.minor.patch)
+            MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+            MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+            PATCH=$(echo $CURRENT_VERSION | cut -d. -f3 | sed 's/[^0-9].*//')  # Strip any pre-release suffix
+
+            # Apply bump
+            case "${{ github.event.inputs.bump_type }}" in
+              major)
+                MAJOR=$((MAJOR + 1))
+                MINOR=0
+                PATCH=0
+                ;;
+              minor)
+                MINOR=$((MINOR + 1))
+                PATCH=0
+                ;;
+              patch)
+                PATCH=$((PATCH + 1))
+                ;;
+              none)
+                # Keep current version
+                ;;
+            esac
+
+            BASE_VERSION="$MAJOR.$MINOR.$PATCH"
+            TIMESTAMP=$(date +%Y%m%d%H%M%S)
+            COMMIT_HASH=$(git rev-parse --short HEAD)
+
+            # Use PEP 440 compliant version format
+            # beta -> b, nightly/dev -> dev
+            TAG="${{ github.event.inputs.tag }}"
+            if [ "$TAG" = "beta" ]; then
+              # Format: 0.3.0b20241209143052 (PEP 440 beta)
+              BETA_VERSION="${BASE_VERSION}b${TIMESTAMP}"
+            else
+              # Format: 0.3.0.dev20241209143052 (PEP 440 dev release)
+              BETA_VERSION="${BASE_VERSION}.${TAG}${TIMESTAMP}"
+            fi
+
+            echo "🚀 Generated version: $BETA_VERSION (from base $BASE_VERSION)"
+          fi
+
+          # Update pyproject.toml with new version
+          sed -i "s/^version = \".*\"/version = \"$BETA_VERSION\"/" pyproject.toml
+          echo "version=$BETA_VERSION" >> $GITHUB_OUTPUT
+
+          # Show the change
+          echo "Updated pyproject.toml:"
+          grep '^version = ' pyproject.toml
+
+      - name: Build package
+        run: |
+          # Clean any previous builds
+          rm -rf dist/
+
+          # Build with UV
+          uv build
+
+          # Verify the build
+          ls -la dist/
+
+          # Show package info
+          echo "📦 Built packages:"
+          for f in dist/*; do
+            echo "  - $(basename $f)"
+          done
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          print-hash: true
+
+      - name: Summary
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ github.event.inputs.tag }}"
+
+          echo "🎉 Successfully published beta release!"
+          echo ""
+          echo "📦 Version: $VERSION"
+          echo "🏷️ Tag: $TAG"
+          echo "📥 Install with:"
+          echo ""
+          echo "  pip install opper-agents==$VERSION"
+          echo "  # or"
+          echo "  uv add opper-agents==$VERSION"
+          echo ""
+          echo "🔗 PyPI: https://pypi.org/project/opper-agents/$VERSION/"
