@@ -136,6 +136,31 @@ jobs:
         with:
           print-hash: true
 
+      - name: Extract changelog for version
+        id: changelog
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+
+          # Extract changelog section for this version
+          NOTES=$(awk -v ver="$VERSION" '
+            /^## \[/ {
+              if (found) exit
+              if (index($0, "[" ver "]")) found=1
+              next
+            }
+            found { print }
+          ' CHANGELOG.md)
+
+          # Fall back to default if no changelog entry found
+          if [ -z "$NOTES" ]; then
+            NOTES="See CHANGELOG.md for details."
+          fi
+
+          # Handle multiline output for GitHub Actions
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Create GitHub Release
         if: github.event.inputs.create_release != 'false'
         env:
@@ -143,16 +168,18 @@ jobs:
         run: |
           VERSION="${{ needs.check-version.outputs.version }}"
           TAG_NAME="v$VERSION"
-          
+          CHANGELOG_NOTES="${{ steps.changelog.outputs.notes }}"
+
           # Create the tag
           git tag "$TAG_NAME"
           git push origin "$TAG_NAME"
-          
+
           # Generate release notes
           RELEASE_NOTES="$(cat <<EOF
           ## 🚀 Opper Agents v$VERSION
 
-          This release contains the latest updates to the Opper Agents SDK.
+          ### What's Changed
+          $CHANGELOG_NOTES
 
           ### 📦 Installation
           \`\`\`bash
