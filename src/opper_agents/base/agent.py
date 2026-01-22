@@ -51,6 +51,7 @@ class BaseAgent(ABC):
         opper_api_key: Optional[str] = None,
         opper_server_url: Optional[str] = None,
         enable_streaming: bool = False,
+        agent_tool_timeout: Optional[float] = 120.0,
     ):
         """
         Initialize base agent.
@@ -70,6 +71,8 @@ class BaseAgent(ABC):
             opper_api_key: Opper API key (or from env)
             opper_server_url: Optional custom Opper server URL (for local instances)
             enable_streaming: Enable streaming responses from LLM calls (default: False)
+            agent_tool_timeout: Seconds to wait when running this agent as a tool.
+                Set to None to disable the timeout.
         """
         # Basic config
         self.name = name
@@ -79,6 +82,7 @@ class BaseAgent(ABC):
         self.verbose = verbose
         self.model = model or "gcp/gemini-flash-latest"
         self.enable_streaming = enable_streaming
+        self.agent_tool_timeout = agent_tool_timeout
 
         # Logger setup
         if logger is not None:
@@ -274,7 +278,9 @@ class BaseAgent(ABC):
 
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future = executor.submit(run_in_thread)
-                    return future.result(timeout=60)
+                    if self.agent_tool_timeout is None:
+                        return future.result()
+                    return future.result(timeout=self.agent_tool_timeout)
 
             except RuntimeError:
                 return asyncio.run(call_agent())
