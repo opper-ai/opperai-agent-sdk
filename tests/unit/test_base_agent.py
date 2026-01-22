@@ -603,3 +603,36 @@ def test_visualize_flow_sanitizes_node_ids(mock_opper_client, monkeypatch):
     assert "```mermaid" in diagram
     # Spaces and special chars should be handled
     assert "My" in diagram
+
+
+def test_agent_tool_timeout_parameter(mock_opper_client, monkeypatch):
+    """Test agent_tool_timeout parameter configuration."""
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    # Default timeout
+    agent = TestAgent(name="DefaultTimeout")
+    assert agent.agent_tool_timeout == 120.0
+
+    # Custom timeout
+    agent = TestAgent(name="CustomTimeout", agent_tool_timeout=300.0)
+    assert agent.agent_tool_timeout == 300.0
+
+    # No timeout
+    agent = TestAgent(name="NoTimeout", agent_tool_timeout=None)
+    assert agent.agent_tool_timeout is None
+
+
+@pytest.mark.asyncio
+async def test_agent_as_tool_uses_configured_timeout(mock_opper_client, monkeypatch):
+    """Test that agent-as-tool respects the configured agent_tool_timeout."""
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    # Agent with short timeout
+    agent = SlowAgent(name="SlowAgent", agent_tool_timeout=0.5)
+    tool = agent.as_tool()
+
+    # Execute from async context and expect timeout (SlowAgent sleeps for 2 seconds)
+    # When called from running event loop, it uses ThreadPoolExecutor with timeout
+    with pytest.raises(concurrent.futures.TimeoutError):
+        # Direct call from async context triggers ThreadPoolExecutor path
+        tool.func("test task")
