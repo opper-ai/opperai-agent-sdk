@@ -35,7 +35,7 @@ A Python SDK for building AI agents with [Opper Task Completion API](https://opp
 Building an agent takes three steps:
 
 ```python
-from opper_agent import Agent, tool
+from opper_agents import Agent, tool
 
 # 1. Define your tools
 @tool
@@ -153,7 +153,7 @@ See `examples/01_getting_started/02_agent_as_tool.py` for a complete example.
 The SDK supports MCP servers as tool providers, allowing agents to connect to external services. Both `stdio` and HTTP-SSE transports are supported.
 
 ```python
-from opper_agent import mcp, MCPServerConfig
+from opper_agents import mcp, MCPServerConfig
 
 # Configure an MCP server
 filesystem_server = MCPServerConfig(
@@ -179,9 +179,9 @@ Hooks let you run code at specific points in the agent's lifecycle for logging, 
 **Available hooks**: `agent_start`, `agent_end`, `agent_error`, `loop_start`, `loop_end`, `llm_call`, `llm_response`, `think_end`, `tool_call`, `tool_result`
 
 ```python
-from opper_agent import hook
-from opper_agent.base.context import AgentContext
-from opper_agent.base.agent import BaseAgent
+from opper_agents import hook
+from opper_agents.base.context import AgentContext
+from opper_agents.base.agent import BaseAgent
 
 @hook("agent_start")
 async def log_start(context: AgentContext, agent: BaseAgent):
