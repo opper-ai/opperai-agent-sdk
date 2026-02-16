@@ -5,7 +5,7 @@ This module provides convenient decorators for converting functions
 into tools and marking hooks for lifecycle events.
 """
 
-from typing import Callable, Optional, Dict, Any, Union, TypeVar, overload
+from typing import Callable, Optional, Dict, Any, List, Union, TypeVar, overload
 from ..base.tool import FunctionTool
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -18,6 +18,8 @@ def tool(
     name: Optional[str] = None,
     description: Optional[str] = None,
     parameters: Optional[Dict[str, Any]] = None,
+    output_schema: Optional[Any] = None,
+    examples: Optional[List[Dict[str, Any]]] = None,
 ) -> Callable[[F], FunctionTool]: ...
 
 
@@ -28,6 +30,8 @@ def tool(
     name: Optional[str] = None,
     description: Optional[str] = None,
     parameters: Optional[Dict[str, Any]] = None,
+    output_schema: Optional[Any] = None,
+    examples: Optional[List[Dict[str, Any]]] = None,
 ) -> FunctionTool: ...
 
 
@@ -37,6 +41,8 @@ def tool(
     name: Optional[str] = None,
     description: Optional[str] = None,
     parameters: Optional[Dict[str, Any]] = None,
+    output_schema: Optional[Any] = None,
+    examples: Optional[List[Dict[str, Any]]] = None,
 ) -> Union[FunctionTool, Callable[[F], FunctionTool]]:
     """
     Decorator to convert a function into a Tool.
@@ -51,18 +57,25 @@ def tool(
         def my_func(x: str) -> str:
             return x.upper()
 
+        @tool(output_schema=MyOutputModel, examples=[{"input": {...}, "output": {...}}])
+        def search(query: str) -> dict:
+            '''Search for something.'''
+            return {"results": [...]}
+
     Args:
         func: Function to wrap (when used without arguments)
         name: Custom tool name (default: function name)
         description: Custom description (default: function docstring)
         parameters: Custom parameter schema (default: auto-extracted)
+        output_schema: Pydantic model describing the output structure
+        examples: List of example input/output pairs
 
     Returns:
         FunctionTool instance wrapping the function
     """
 
     def decorator(f: Callable[..., Any]) -> FunctionTool:
-        return FunctionTool(f, name, description, parameters)
+        return FunctionTool(f, name, description, parameters, output_schema, examples)
 
     if func is None:
         # Called with arguments: @tool(name="something")

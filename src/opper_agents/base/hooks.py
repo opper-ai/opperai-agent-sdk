@@ -34,6 +34,11 @@ class HookEvents:
     LLM_RESPONSE = "llm_response"
     THINK_END = "think_end"
 
+    # Memory events
+    MEMORY_READ = "memory_read"
+    MEMORY_WRITE = "memory_write"
+    MEMORY_ERROR = "memory_error"
+
     # Streaming events
     STREAM_START = "stream_start"
     STREAM_CHUNK = "stream_chunk"
@@ -60,6 +65,63 @@ class HookManager:
         if self.verbose:
             logger.info(f"Registered hook for event: {event}")
 
+    def on(self, event: str, hook: HookFunction) -> Callable[[], None]:
+        """
+        Register a hook and return a cleanup function.
+
+        Args:
+            event: Event name to listen for
+            hook: Hook function to register
+
+        Returns:
+            Callable that removes the hook when called
+        """
+        self.register(event, hook)
+
+        def unregister() -> None:
+            self.off(event, hook)
+
+        return unregister
+
+    def once(self, event: str, hook: HookFunction) -> Callable[[], None]:
+        """
+        Register a hook that auto-removes after first invocation.
+
+        Args:
+            event: Event name to listen for
+            hook: Hook function to register (called only once)
+
+        Returns:
+            Callable that removes the hook when called
+        """
+
+        async def disposable(context: AgentContext, **kwargs: Any) -> None:
+            try:
+                if asyncio.iscoroutinefunction(hook):
+                    await hook(context, **kwargs)
+                else:
+                    hook(context, **kwargs)
+            finally:
+                self.off(event, disposable)
+
+        return self.on(event, disposable)
+
+    def off(self, event: str, hook: HookFunction) -> None:
+        """
+        Remove a specific hook from an event.
+
+        Args:
+            event: Event name
+            hook: Hook function to remove
+        """
+        if event in self.hooks:
+            try:
+                self.hooks[event].remove(hook)
+            except ValueError:
+                pass
+            if not self.hooks[event]:
+                del self.hooks[event]
+
     def register_multiple(self, hooks: List[tuple[str, HookFunction]]) -> None:
         """Register multiple hooks at once. Each tuple is (event, hook_func)."""
         for event, hook in hooks:
@@ -73,7 +135,7 @@ class HookManager:
         if event not in self.hooks:
             return
 
-        for hook_func in self.hooks[event]:
+        for hook_func in list(self.hooks.get(event, [])):
             try:
                 # Handle both sync and async hooks
                 if asyncio.iscoroutinefunction(hook_func):

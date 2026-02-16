@@ -20,6 +20,9 @@ class ReactAgent(Agent):
     """
     ReAct pattern agent: Reasoning + Acting in cycles.
 
+    .. deprecated::
+        ReactAgent is deprecated. Use Agent instead.
+
     Loop:
     1. Reason: Analyze situation and decide on action
     2. Act: Execute the chosen tool
@@ -31,6 +34,16 @@ class ReactAgent(Agent):
     - Explicit observation step
     - Clear separation between reasoning and acting
     """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        import warnings
+
+        warnings.warn(
+            "ReactAgent is deprecated. Use Agent instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)
 
     async def _run_loop(self, goal: Any) -> Any:
         """

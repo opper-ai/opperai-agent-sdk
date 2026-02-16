@@ -120,7 +120,7 @@ async def on_think_end(context: AgentContext, agent: BaseAgent, thought: Any) ->
 
 @hook("tool_call")
 async def on_tool_call(
-    context: AgentContext, agent: BaseAgent, tool: Tool, parameters: dict
+    context: AgentContext, agent: BaseAgent, tool: Tool, parameters: dict, **kwargs
 ) -> None:
     """Called before executing a tool."""
     print(f"\nHOOK [on_tool_call]: Calling tool '{tool.name}'")
@@ -129,7 +129,7 @@ async def on_tool_call(
 
 @hook("tool_result")
 async def on_tool_result(
-    context: AgentContext, agent: BaseAgent, tool: Tool, result: ToolResult
+    context: AgentContext, agent: BaseAgent, tool: Tool, result: ToolResult, **kwargs
 ) -> None:
     """Called after tool execution."""
     status = "✓" if result.success else "✗"

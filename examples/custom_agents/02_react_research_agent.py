@@ -125,7 +125,7 @@ async def on_reasoning(context: Any, agent: Any, thought: Any) -> None:
 
 
 @hook("tool_result")
-async def on_result(context: Any, agent: Any, tool: Any, result: Any) -> None:
+async def on_result(context: Any, agent: Any, tool: Any, result: Any, **kwargs) -> None:
     """Display tool results."""
     if result.success:
         result_preview = str(result.result)[:100]

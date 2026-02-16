@@ -101,7 +101,9 @@ async def on_think_end(context: Any, agent: Any, thought: Any) -> None:
 
 
 @hook("tool_result")
-async def on_tool_result(context: Any, agent: Any, tool: Any, result: Any) -> None:
+async def on_tool_result(
+    context: Any, agent: Any, tool: Any, result: Any, **kwargs
+) -> None:
     """Called after each tool execution."""
     if result.success:
         print(f"   ✓ Result: {result.result}")

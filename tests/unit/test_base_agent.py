@@ -213,6 +213,18 @@ def test_agent_default_model(mock_opper_client, monkeypatch):
     assert agent.model == "gcp/gemini-flash-latest"
 
 
+def test_agent_model_accepts_list(mock_opper_client, monkeypatch):
+    """Test agent accepts a list of models for fallback routing."""
+    monkeypatch.setenv("OPPER_API_KEY", "test-key")
+
+    models = ["openai/gpt-4o", "anthropic/claude-3.7-sonnet"]
+    agent = TestAgent(name="Test", model=models)
+
+    assert agent.model == models
+    assert isinstance(agent.model, list)
+    assert len(agent.model) == 2
+
+
 def test_agent_with_custom_description(mock_opper_client, monkeypatch):
     """Test agent with custom description."""
     monkeypatch.setenv("OPPER_API_KEY", "test-key")
