@@ -1,7 +1,7 @@
 """
 Quick test to verify the agent works.
 
-Run this with: uv run python examples/quick_test.py
+Run this with: uv run python examples/01_getting_started/01_first_agent.py
 """
 
 import asyncio
@@ -55,22 +55,21 @@ async def main() -> None:
     print(f"Task: {task}\n")
 
     try:
-        result = await agent.process(task)
+        run_result = await agent.run(task)
         print("\n" + "=" * 60)
-        print(f"Final Result: {result}")
+        print(f"Final Result: {run_result.result}")
         print("=" * 60)
 
-        # Show execution stats
-        if agent.context:
-            print("\nExecution Stats:")
-            print(f"  - Iterations: {agent.context.iteration}")
-            print(
-                f"  - Tool calls: {sum(len(c.tool_calls) for c in agent.context.execution_history)}"
-            )
-            print(f"  - Token usage: {agent.context.usage}")
+        # Show usage from RunResult
+        usage = run_result.usage
+        print("\nUsage Statistics:")
+        print(f"  - Requests:     {usage.requests}")
+        print(f"  - Input tokens: {usage.input_tokens}")
+        print(f"  - Output tokens:{usage.output_tokens}")
+        print(f"  - Total tokens: {usage.total_tokens}")
 
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\nError: {e}")
         import traceback
 
         traceback.print_exc()

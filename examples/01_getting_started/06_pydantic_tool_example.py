@@ -137,10 +137,13 @@ Be thorough and ensure all report fields are properly filled with relevant conte
     print("-" * 70 + "\n")
 
     task = "Create a comprehensive report on AI Safety and save it to a file."
-    result = await agent.process(task)
+    run_result = await agent.run(task)
 
     print("\n" + "=" * 70)
-    print(f"Result: {result}")
+    print(f"Result: {run_result.result}")
+    print(
+        f"Usage: {run_result.usage.requests} requests, {run_result.usage.total_tokens} tokens"
+    )
     print("=" * 70)
 
     # Test 2: Generate a report on Climate Change
@@ -149,10 +152,13 @@ Be thorough and ensure all report fields are properly filled with relevant conte
     print("-" * 70 + "\n")
 
     task = "Research Climate Change and create a detailed report file."
-    result = await agent.process(task)
+    run_result = await agent.run(task)
 
     print("\n" + "=" * 70)
-    print(f"Result: {result}")
+    print(f"Result: {run_result.result}")
+    print(
+        f"Usage: {run_result.usage.requests} requests, {run_result.usage.total_tokens} tokens"
+    )
     print("=" * 70)
 
     # Show that the agent understands the structured schema

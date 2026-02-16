@@ -68,7 +68,8 @@ async def main() -> None:
     print("=" * 60)
 
     try:
-        result = await agent.process({"topic": topic})
+        run_result = await agent.run({"topic": topic})
+        result = run_result.result
 
         # Display the results
         print("\n" + "=" * 60)
@@ -79,6 +80,10 @@ async def main() -> None:
         for i, response in enumerate(result.user_responses, 1):
             print(f"  {i}. {response}")
         print("=" * 60)
+
+        # Show usage
+        usage = run_result.usage
+        print(f"\nUsage: {usage.requests} requests, {usage.total_tokens} tokens")
 
     except KeyboardInterrupt:
         print("\n\nConversation interrupted by user.")
