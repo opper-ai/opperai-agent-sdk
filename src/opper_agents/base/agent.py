@@ -13,8 +13,8 @@ import os
 import asyncio
 import concurrent.futures
 
-from .context import AgentContext
-from .tool import Tool, FunctionTool, ToolProvider
+from .context import AgentContext, RunResult, Usage
+from .tool import Tool, FunctionTool, ToolProvider, ToolResult
 from .hooks import HookManager
 from ..utils.logging import AgentLogger, SimpleLogger
 from ..utils.version import get_user_agent
@@ -47,11 +47,12 @@ class BaseAgent(ABC):
         max_iterations: int = 25,
         verbose: bool = False,
         logger: Optional[AgentLogger] = None,
-        model: Optional[str] = None,
+        model: Optional[Union[str, List[str]]] = None,
         opper_api_key: Optional[str] = None,
         opper_server_url: Optional[str] = None,
         enable_streaming: bool = False,
         agent_tool_timeout: Optional[float] = 120.0,
+        parallel_tool_execution: bool = False,
     ):
         """
         Initialize base agent.
@@ -67,12 +68,15 @@ class BaseAgent(ABC):
             max_iterations: Maximum execution iterations
             verbose: Enable verbose logging (legacy, use logger instead)
             logger: Custom logger instance (defaults to SimpleLogger if verbose=True)
-            model: Default model for LLM calls
+            model: Model for LLM calls. Can be a string or a list of strings
+                for fallback routing (e.g. ["openai/gpt-4o", "anthropic/claude-3.7-sonnet"])
             opper_api_key: Opper API key (or from env)
             opper_server_url: Optional custom Opper server URL (for local instances)
             enable_streaming: Enable streaming responses from LLM calls (default: False)
             agent_tool_timeout: Seconds to wait when running this agent as a tool.
                 Set to None to disable the timeout.
+            parallel_tool_execution: Execute multiple tool calls concurrently
+                using asyncio.gather (default: False, sequential execution).
         """
         # Basic config
         self.name = name
@@ -80,9 +84,10 @@ class BaseAgent(ABC):
         self.instructions = instructions
         self.max_iterations = max_iterations
         self.verbose = verbose
-        self.model = model or "gcp/gemini-flash-latest"
+        self.model: Union[str, List[str]] = model or "gcp/gemini-flash-latest"
         self.enable_streaming = enable_streaming
         self.agent_tool_timeout = agent_tool_timeout
+        self.parallel_tool_execution = parallel_tool_execution
 
         # Logger setup
         if logger is not None:
@@ -169,6 +174,19 @@ class BaseAgent(ABC):
             await provider.teardown()
         self.active_provider_tools.clear()
 
+    # Hook convenience methods
+    def on(self, event: str, handler: Callable) -> Callable[[], None]:
+        """Register a hook. Returns a cleanup function."""
+        return self.hook_manager.on(event, handler)
+
+    def once(self, event: str, handler: Callable) -> Callable[[], None]:
+        """Register a one-time hook. Auto-removes after first trigger."""
+        return self.hook_manager.once(event, handler)
+
+    def off(self, event: str, handler: Callable) -> None:
+        """Remove a specific hook from an event."""
+        self.hook_manager.off(event, handler)
+
     # Tool management
     def add_tool(self, tool: Tool, *, as_base: bool = True) -> None:
         """Add a tool to the agent."""
@@ -192,14 +210,31 @@ class BaseAgent(ABC):
     @abstractmethod
     async def process(self, input: Any, _parent_span_id: Optional[str] = None) -> Any:
         """
-        Main entry point for agent execution.
-        Must be implemented by subclasses.
+        Main entry point for agent execution. Returns only the result.
 
         Args:
             input: Goal/task to process
             _parent_span_id: Optional parent span ID for nested agent calls
         """
         pass
+
+    async def run(self, input: Any, _parent_span_id: Optional[str] = None) -> RunResult:
+        """
+        Execute agent and return both result and usage statistics.
+
+        This is the recommended API for running agents. Use this instead of
+        process() when you need usage/cost information.
+
+        Args:
+            input: Goal/task to process
+            _parent_span_id: Optional parent span ID for nested agent calls
+
+        Returns:
+            RunResult with result and usage statistics
+        """
+        result = await self.process(input, _parent_span_id=_parent_span_id)
+        usage = self.context.usage if self.context else Usage()
+        return RunResult(result=result, usage=usage)
 
     @abstractmethod
     async def _run_loop(self, goal: Any) -> Any:
@@ -242,6 +277,12 @@ class BaseAgent(ABC):
                 # Fall back to simple task parameter if schema extraction fails
                 pass
 
+        # Store reference for the closure to capture run_result usage.
+        # Lock serializes concurrent calls to the same tool to prevent
+        # _last_run_usage from being overwritten between write and read.
+        _last_run_usage: List[Any] = []
+        _usage_lock = asyncio.Lock()
+
         def agent_tool(
             task: Optional[str] = None,
             _parent_span_id: Optional[str] = None,
@@ -262,7 +303,11 @@ class BaseAgent(ABC):
                     if self.instructions:
                         input_data["instructions"] = self.instructions
 
-                return await self.process(input_data, _parent_span_id=_parent_span_id)
+                run_result = await self.run(input_data, _parent_span_id=_parent_span_id)
+                # Stash usage for ToolResult propagation
+                _last_run_usage.clear()
+                _last_run_usage.append(run_result.usage)
+                return run_result.result
 
             # Handle event loop
             try:
@@ -285,12 +330,25 @@ class BaseAgent(ABC):
             except RuntimeError:
                 return asyncio.run(call_agent())
 
+        # Create a custom FunctionTool that propagates usage from nested agent
         tool = FunctionTool(
             func=agent_tool,
             name=tool_name,
             description=description,
             parameters=parameters,
         )
+
+        # Override execute to attach usage from nested agent run
+        original_execute = tool.execute
+
+        async def execute_with_usage(**kwargs: Any) -> ToolResult:
+            async with _usage_lock:
+                result = await original_execute(**kwargs)
+                if _last_run_usage:
+                    result.usage = _last_run_usage[0]
+                return result
+
+        object.__setattr__(tool, "execute", execute_with_usage)
 
         # Store reference to wrapped agent for visualization
         object.__setattr__(tool, "wrapped_agent", self)

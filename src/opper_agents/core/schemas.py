@@ -142,7 +142,7 @@ def create_thought_with_output_schema(
 
     # Cache for reuse
     _thought_schema_cache[cache_key] = ThoughtWithSchema
-    return ThoughtWithSchema  # type: ignore[return-value]
+    return ThoughtWithSchema
 
 
 def create_react_thought_with_output_schema(
@@ -183,4 +183,4 @@ def create_react_thought_with_output_schema(
 
     # Cache for reuse
     _react_thought_schema_cache[cache_key] = ReactThoughtWithSchema
-    return ReactThoughtWithSchema  # type: ignore[return-value]
+    return ReactThoughtWithSchema

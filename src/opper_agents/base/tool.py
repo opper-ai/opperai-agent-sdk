@@ -38,6 +38,9 @@ class ToolResult(BaseModel):
     metadata: Dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata"
     )
+    usage: Optional[Any] = Field(
+        default=None, description="Usage stats from nested agent execution"
+    )
 
     class Config:
         arbitrary_types_allowed = True
@@ -52,6 +55,12 @@ class Tool(BaseModel, ABC):
     name: str = Field(description="Tool name")
     description: str = Field(description="Tool description")
     parameters: Dict[str, Any] = Field(description="Tool parameters schema")
+    output_schema: Optional[Any] = Field(
+        default=None, description="Pydantic model describing output structure"
+    )
+    examples: Optional[List[Dict[str, Any]]] = Field(
+        default=None, description="Example input/output pairs"
+    )
 
     class Config:
         arbitrary_types_allowed = True
@@ -83,6 +92,8 @@ class FunctionTool(Tool):
         name: Optional[str] = None,
         description: Optional[str] = None,
         parameters: Optional[Dict[str, Any]] = None,
+        output_schema: Optional[Any] = None,
+        examples: Optional[List[Dict[str, Any]]] = None,
     ):
         # Extract metadata from function
         tool_name = name or func.__name__
@@ -97,6 +108,8 @@ class FunctionTool(Tool):
             name=tool_name,
             description=tool_description,
             parameters=parameters,
+            output_schema=output_schema,
+            examples=examples,
         )
         # Set func directly after parent initialization
         object.__setattr__(self, "func", func)

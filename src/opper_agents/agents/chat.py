@@ -121,10 +121,20 @@ class ChatAgent(Agent):
         """
         Initialize ChatAgent.
 
+        .. deprecated::
+            ChatAgent is deprecated. Use Agent instead.
+
         Args:
             *args: Passed to Agent.__init__
             **kwargs: Passed to Agent.__init__
         """
+        import warnings
+
+        warnings.warn(
+            "ChatAgent is deprecated. Use Agent instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         # Extract ChatAgent-specific options
         self.max_history_messages = kwargs.pop("max_history_messages", 50)
 

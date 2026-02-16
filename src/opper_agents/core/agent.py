@@ -7,6 +7,8 @@ This module contains the primary Agent class that implements the think-act loop.
 from typing import Any, Optional, List, Type
 from datetime import datetime, timezone
 from pydantic import BaseModel
+import asyncio
+import uuid
 
 from ..base.agent import BaseAgent
 from ..base.context import AgentContext, ExecutionCycle, Usage
@@ -106,19 +108,17 @@ class Agent(BaseAgent):
             await self._deactivate_tool_providers()
 
             if parent_span:
-                # Update parent span with final output
-                # Shield from AnyIO cancel scopes that may have been left by MCP cleanup
-                import anyio
-
+                # Queue parent span update (deferred)
                 end_time = datetime.now(timezone.utc)
+                self._queue_span_update(
+                    span_id=parent_span.id,
+                    output=str(result),
+                    start_time=start_time,
+                    end_time=end_time,
+                )
 
-                with anyio.CancelScope(shield=True):
-                    await self.opper.spans.update_async(
-                        span_id=parent_span.id,
-                        output=str(result),
-                        start_time=start_time,
-                        end_time=end_time,
-                    )
+            # Clean up breakdown if only parent agent ran
+            self.context.cleanup_breakdown_if_only_parent(self.name)
 
             return result
 
@@ -132,6 +132,12 @@ class Agent(BaseAgent):
             # Ensure tool providers are deactivated even if an error occurred
             # This is idempotent, safe to call multiple times
             await self._deactivate_tool_providers()
+
+            # Flush all deferred span updates
+            import anyio
+
+            with anyio.CancelScope(shield=True):
+                await self._flush_pending_span_updates()
 
     async def _run_loop(self, goal: Any) -> Any:
         """
@@ -178,29 +184,51 @@ class Agent(BaseAgent):
                     if self.logger:
                         self.logger.log_memory_read(thought.memory_reads)
 
-                    mem_read_start = datetime.now(timezone.utc)
-                    memory_read_span = await self.opper.spans.create_async(
-                        name="memory_read",
-                        input=str(thought.memory_reads),
-                        parent_id=self.context.parent_span_id,
-                        type="memory 🧠",  # Feature 2
-                    )
+                    try:
+                        mem_read_start = datetime.now(timezone.utc)
+                        memory_read_span = await self.opper.spans.create_async(
+                            name="memory_read",
+                            input=str(thought.memory_reads),
+                            parent_id=self.context.parent_span_id,
+                            type="memory 🧠",
+                        )
 
-                    memory_data = await self.context.memory.read(thought.memory_reads)
+                        memory_data = await self.context.memory.read(
+                            thought.memory_reads
+                        )
 
-                    mem_read_end = datetime.now(timezone.utc)
+                        mem_read_end = datetime.now(timezone.utc)
 
-                    await self.opper.spans.update_async(
-                        span_id=memory_read_span.id,
-                        output=str(memory_data),
-                        start_time=mem_read_start,
-                        end_time=mem_read_end,
-                    )
+                        self._queue_span_update(
+                            span_id=memory_read_span.id,
+                            output=str(memory_data),
+                            start_time=mem_read_start,
+                            end_time=mem_read_end,
+                        )
 
-                    self.context.metadata["current_memory"] = memory_data
-                    memory_reads_performed = True
-                    if self.logger:
-                        self.logger.log_memory_loaded(memory_data)
+                        self.context.metadata["current_memory"] = memory_data
+                        memory_reads_performed = True
+                        if self.logger:
+                            self.logger.log_memory_loaded(memory_data)
+
+                        # Trigger: memory_read
+                        await self.hook_manager.trigger(
+                            HookEvents.MEMORY_READ,
+                            self.context,
+                            agent=self,
+                            keys=thought.memory_reads,
+                            value=memory_data,
+                        )
+                    except Exception as mem_err:
+                        await self.hook_manager.trigger(
+                            HookEvents.MEMORY_ERROR,
+                            self.context,
+                            agent=self,
+                            operation="read",
+                            error=mem_err,
+                        )
+                        if self.logger:
+                            self.logger.log_warning(f"Memory read failed: {mem_err}")
 
                 if (
                     self.enable_memory
@@ -213,32 +241,52 @@ class Agent(BaseAgent):
                             list(thought.memory_updates.keys())
                         )
 
-                    mem_write_start = datetime.now(timezone.utc)
-                    memory_write_span = await self.opper.spans.create_async(
-                        name="memory_write",
-                        input=str(list(thought.memory_updates.keys())),
-                        parent_id=self.context.parent_span_id,
-                        type="memory 🧠",  # Feature 2
-                    )
-
-                    for key, update in thought.memory_updates.items():
-                        await self.context.memory.write(
-                            key=key,
-                            value=update.get("value"),
-                            description=update.get("description"),
-                            metadata=update.get("metadata"),
+                    try:
+                        mem_write_start = datetime.now(timezone.utc)
+                        memory_write_span = await self.opper.spans.create_async(
+                            name="memory_write",
+                            input=str(list(thought.memory_updates.keys())),
+                            parent_id=self.context.parent_span_id,
+                            type="memory 🧠",
                         )
 
-                    mem_write_end = datetime.now(timezone.utc)
+                        for key, update in thought.memory_updates.items():
+                            await self.context.memory.write(
+                                key=key,
+                                value=update.get("value"),
+                                description=update.get("description"),
+                                metadata=update.get("metadata"),
+                            )
 
-                    await self.opper.spans.update_async(
-                        span_id=memory_write_span.id,
-                        output=f"Successfully wrote {len(thought.memory_updates)} keys",
-                        start_time=mem_write_start,
-                        end_time=mem_write_end,
-                    )
+                        mem_write_end = datetime.now(timezone.utc)
 
-                    memory_writes_performed = True
+                        self._queue_span_update(
+                            span_id=memory_write_span.id,
+                            output=f"Successfully wrote {len(thought.memory_updates)} keys",
+                            start_time=mem_write_start,
+                            end_time=mem_write_end,
+                        )
+
+                        memory_writes_performed = True
+
+                        # Trigger: memory_write
+                        await self.hook_manager.trigger(
+                            HookEvents.MEMORY_WRITE,
+                            self.context,
+                            agent=self,
+                            keys=list(thought.memory_updates.keys()),
+                            updates=thought.memory_updates,
+                        )
+                    except Exception as mem_err:
+                        await self.hook_manager.trigger(
+                            HookEvents.MEMORY_ERROR,
+                            self.context,
+                            agent=self,
+                            operation="write",
+                            error=mem_err,
+                        )
+                        if self.logger:
+                            self.logger.log_warning(f"Memory write failed: {mem_err}")
 
                 if thought is not None:
                     # Check for immediate completion with final result (single LLM call pattern)
@@ -273,9 +321,31 @@ class Agent(BaseAgent):
 
                         return final_result
 
-                    for tool_call in thought.tool_calls:
-                        result = await self._execute_tool(tool_call)
-                        results.append(result)
+                    if self.parallel_tool_execution and len(thought.tool_calls) > 1:
+                        # Execute tool calls in parallel (isolate errors)
+                        raw = await asyncio.gather(
+                            *[self._execute_tool(tc) for tc in thought.tool_calls],
+                            return_exceptions=True,
+                        )
+                        for i, r in enumerate(raw):
+                            if isinstance(r, Exception):
+                                results.append(
+                                    ToolResult(
+                                        tool_name=thought.tool_calls[i].name,
+                                        success=False,
+                                        result=None,
+                                        error=str(r),
+                                        execution_time=0.0,
+                                    )
+                                )
+                            else:
+                                assert isinstance(r, ToolResult)
+                                results.append(r)
+                    else:
+                        # Execute tool calls sequentially (default)
+                        for tool_call in thought.tool_calls:
+                            result = await self._execute_tool(tool_call)
+                            results.append(result)
 
                     cycle = ExecutionCycle(
                         iteration=self.context.iteration,
@@ -330,14 +400,7 @@ class Agent(BaseAgent):
             "goal": str(goal),
             "agent_description": self.description,
             "instructions": self.instructions or "No specific instructions.",
-            "available_tools": [
-                {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters,
-                }
-                for tool in self.tools
-            ],
+            "available_tools": [self._build_tool_context(t) for t in self.tools],
             "execution_history": [
                 {
                     "iteration": cycle.iteration,
@@ -432,16 +495,9 @@ The memory you write persists across all process() calls on this agent.
                 parent_span_id=self.context.parent_span_id,
             )
 
-            # Rename span to simpler "think" (best-effort, may fail silently)
-            # First ensure span exists by fetching it (like Node SDK does)
+            # Queue span rename to simpler "think" (deferred)
             if hasattr(response, "span_id") and response.span_id:
-                try:
-                    await self.opper.spans.get_async(span_id=response.span_id)
-                    await self.opper.spans.update_async(
-                        span_id=response.span_id, name="think"
-                    )
-                except Exception:
-                    pass  # Span may not be updatable
+                self._queue_span_update(span_id=response.span_id, name="think")
 
             # Track usage
             self._track_usage(response)
@@ -481,6 +537,9 @@ The memory you write persists across all process() calls on this agent.
                 execution_time=0.0,
             )
 
+        # Generate unique ID for correlating tool hooks
+        tool_call_id = str(uuid.uuid4())
+
         # Create span for this tool call
         tool_start_time = datetime.now(timezone.utc)
         tool_span = await self.opper.spans.create_async(
@@ -497,6 +556,7 @@ The memory you write persists across all process() calls on this agent.
             agent=self,
             tool=tool,
             parameters=tool_call.parameters,
+            tool_call_id=tool_call_id,
         )
 
         # Execute - pass tool span as parent for nested operations (like agents-as-tools)
@@ -506,8 +566,8 @@ The memory you write persists across all process() calls on this agent.
 
         tool_end_time = datetime.now(timezone.utc)
 
-        # Update tool span with result
-        await self.opper.spans.update_async(
+        # Queue tool span update (deferred)
+        self._queue_span_update(
             span_id=tool_span.id,
             output=str(result.result) if result.success else None,
             error=result.error if not result.success else None,
@@ -515,9 +575,18 @@ The memory you write persists across all process() calls on this agent.
             end_time=tool_end_time,
         )
 
+        # Track usage from nested agent execution
+        if result.usage is not None:
+            self.context.update_usage_with_source(tool_call.name, result.usage)
+
         # Trigger: tool_result
         await self.hook_manager.trigger(
-            HookEvents.TOOL_RESULT, self.context, agent=self, tool=tool, result=result
+            HookEvents.TOOL_RESULT,
+            self.context,
+            agent=self,
+            tool=tool,
+            result=result,
+            tool_call_id=tool_call_id,
         )
 
         if self.logger:
@@ -591,28 +660,99 @@ Follow any instructions provided for formatting and style."""
 
             return result
 
+    def _queue_span_update(self, **kwargs: Any) -> None:
+        """Queue a span update for deferred flushing."""
+        assert self.context is not None, "Context must be initialized"
+        from ..base.context import PendingSpanUpdate
+
+        # Ensure span_id is a string (may be mock in tests)
+        if "span_id" in kwargs and kwargs["span_id"] is not None:
+            kwargs["span_id"] = str(kwargs["span_id"])
+
+        self.context.pending_span_updates.append(PendingSpanUpdate(**kwargs))
+
+    async def _flush_pending_span_updates(self) -> None:
+        """Flush all queued span updates in parallel."""
+        assert self.context is not None, "Context must be initialized"
+        updates = self.context.pending_span_updates[:]
+        self.context.pending_span_updates.clear()
+        if not updates:
+            return
+
+        async def apply_update(update: Any) -> None:
+            kwargs: dict[str, Any] = {"span_id": update.span_id}
+            # Always include output/error (even if None) to match original API behavior
+            if update.output is not None or update.error is not None:
+                kwargs["output"] = update.output
+                kwargs["error"] = update.error
+            if update.start_time is not None:
+                kwargs["start_time"] = update.start_time
+            if update.end_time is not None:
+                kwargs["end_time"] = update.end_time
+            if update.name is not None:
+                kwargs["name"] = update.name
+            await self.opper.spans.update_async(**kwargs)
+
+        results = await asyncio.gather(
+            *[apply_update(u) for u in updates], return_exceptions=True
+        )
+        for result in results:
+            if isinstance(result, Exception) and self.logger:
+                self.logger.log_warning(f"Span update failed: {result}")
+
+    def _build_tool_context(self, tool: Any) -> dict:
+        """Build tool context dict for LLM, including output_schema and examples."""
+        info: dict[str, Any] = {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.parameters,
+        }
+        if tool.output_schema is not None:
+            try:
+                if hasattr(tool.output_schema, "model_json_schema"):
+                    info["returns"] = tool.output_schema.model_json_schema()
+                else:
+                    info["returns"] = str(tool.output_schema)
+            except Exception:
+                pass
+        if tool.examples is not None:
+            info["examples"] = tool.examples
+        return info
+
     def _track_usage(self, response: Any) -> None:
         """
         Track token usage from an Opper response.
 
         Safely extracts usage info if available, otherwise skips tracking.
+        Uses update_usage_with_source for breakdown tracking.
         """
         if not hasattr(response, "usage") or not response.usage:
             return
 
         try:
             assert self.context is not None, "Context must be initialized"
-            from ..base.context import Usage
+            from ..base.context import Usage, Cost
 
             usage_dict = response.usage
             if isinstance(usage_dict, dict):
+                # Extract cost if available (matches Node SDK extractCost)
+                cost = Cost()
+                if hasattr(response, "cost") and isinstance(response.cost, dict):
+                    cost_dict = response.cost
+                    cost = Cost(
+                        generation=float(cost_dict.get("generation", 0) or 0),
+                        platform=float(cost_dict.get("platform", 0) or 0),
+                        total=float(cost_dict.get("total", 0) or 0),
+                    )
+
                 usage = Usage(
                     requests=1,
                     input_tokens=usage_dict.get("input_tokens", 0),
                     output_tokens=usage_dict.get("output_tokens", 0),
                     total_tokens=usage_dict.get("total_tokens", 0),
+                    cost=cost,
                 )
-                self.context.update_usage(usage)
+                self.context.update_usage_with_source(self.name, usage)
         except Exception as e:
             # Don't break execution if usage tracking fails
             if self.logger:
