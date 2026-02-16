@@ -22,10 +22,12 @@ A Python SDK for building AI agents with [Opper Task Completion API](https://opp
 ## 1. Features
 
 - **Reasoning with customizable model**: Think → Act reasoning loop with dynamic tool selection
-- **Extendable tool support**: Support for MCP or custom tools
+- **Extendable tool support**: Support for MCP or custom tools with output schemas and examples
+- **Parallel tool execution**: Run independent tool calls concurrently for lower latency
 - **Event Hooks**: Flexible hook system for accessing any internal Agent event
 - **Composable interface**: Agent supports structured input and output schema for ease of integration
-- **Multi-agent support**: Agents can be used as tools for other agents to allow for delegation
+- **Multi-agent support**: Agents can be used as tools for other agents with usage propagation
+- **Usage & Cost tracking**: `run()` returns result + detailed token usage and cost breakdown
 - **Type Safety internals**: Pydantic model validation throughout execution
 - **Error Handling**: Robust error handling with retry mechanisms
 - **Tracing & Monitoring**: Full observability with Opper's tracing system
@@ -51,7 +53,9 @@ agent = Agent(
 )
 
 # 3. Run it
-result = await agent.process("What's the weather in Paris?")
+run_result = await agent.run("What's the weather in Paris?")
+print(run_result.result)  # The answer
+print(run_result.usage)   # Token usage and cost
 ```
 
 ## 3. Installation
@@ -104,10 +108,10 @@ Get your API key at [platform.opper.ai](https://platform.opper.ai).
 
 Check out the `examples/` directory for working examples:
 
-- **Getting Started** (`examples/01_getting_started/`): Basic agent usage, memory, hooks
+- **Getting Started** (`examples/01_getting_started/`): Basic agent usage, memory, hooks, parallel execution, tool schemas
 - **MCP Integration** (`examples/02_mcp_examples/`): Connect to MCP servers
 - **Applied Agents** (`examples/applied_agents/`): Real-world examples like multi-agent systems
-- **Custom Agents** (`examples/custom_agents/`): Build specialized agent types (React, Chat)
+- **Custom Agents** (`examples/custom_agents/`): Build specialized agent types
 
 Run any example:
 ```bash
@@ -176,7 +180,7 @@ See `examples/02_mcp_examples/` for working examples with filesystem, SQLite, an
 
 Hooks let you run code at specific points in the agent's lifecycle for logging, monitoring, or custom behavior:
 
-**Available hooks**: `agent_start`, `agent_end`, `agent_error`, `loop_start`, `loop_end`, `llm_call`, `llm_response`, `think_end`, `tool_call`, `tool_result`
+**Available hooks**: `agent_start`, `agent_end`, `agent_error`, `loop_start`, `loop_end`, `llm_call`, `llm_response`, `think_end`, `tool_call`, `tool_result`, `memory_read`, `memory_write`, `memory_error`
 
 ```python
 from opper_agents import hook
@@ -184,7 +188,7 @@ from opper_agents.base.context import AgentContext
 from opper_agents.base.agent import BaseAgent
 
 @hook("agent_start")
-async def log_start(context: AgentContext, agent: BaseAgent):
+async def log_start(context: AgentContext, agent: BaseAgent, **kwargs):
     print(f"Agent {agent.name} starting with goal: {context.goal}")
 
 agent = Agent(
@@ -192,6 +196,10 @@ agent = Agent(
     hooks=[log_start],
     tools=[...]
 )
+
+# Or use the EventEmitter-style API
+agent.on("agent_end", my_handler)
+agent.once("agent_error", my_error_handler)
 ```
 
 See `examples/01_getting_started/05_hooks.py` for all available hooks with detailed examples.
