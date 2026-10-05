@@ -2,7 +2,7 @@
 
 > [!IMPORTANT]
 > **This SDK is no longer maintained.** Agents are now built into the `opperai` package (`pip install -U opperai`).
-> Opper's SDKs now live at **https://github.com/opper-ai/opper-sdks**.
+> See **https://docs.opper.ai** for current best practices on using Opper. The SDKs now live at https://github.com/opper-ai/opper-sdks.
 > This repository is archived and will not receive new patches or releases.
 
 A Python SDK for building AI agents with [Opper Task Completion API](https://opper.ai). Create intelligent agents that use tools-based reasoning loops with dynamic tool selection, event tracking, and MCP integration.
